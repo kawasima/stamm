@@ -11,7 +11,7 @@ import { PaginatedResult, SortDirection } from "./common.js";
 export const CreateComment = z.function()
   .args(z.object({
     issueId: Id,
-    authorId: Id,
+    actorId: Id,
     body: MarkdownContent.min(1),
     visibility: CommentVisibility.optional(),
   }))
@@ -25,6 +25,7 @@ export const GetComment = z.function()
 /** Update a comment's body */
 export const UpdateComment = z.function()
   .args(z.object({
+    actorId: Id,
     commentId: Id,
     body: MarkdownContent.min(1),
     visibility: CommentVisibility.optional(),
@@ -33,7 +34,7 @@ export const UpdateComment = z.function()
 
 /** Delete a comment */
 export const DeleteComment = z.function()
-  .args(z.object({ commentId: Id }))
+  .args(z.object({ actorId: Id, commentId: Id }))
   .returns(z.promise(z.void()));
 
 /** List comments on an issue */
@@ -54,7 +55,7 @@ export const AddReaction = z.function()
   .args(z.object({
     targetType: z.string().min(1),
     targetId: Id,
-    userId: Id,
+    actorId: Id,
     emoji: z.string().min(1).max(50),
   }))
   .returns(z.promise(Reaction));
@@ -64,7 +65,7 @@ export const RemoveReaction = z.function()
   .args(z.object({
     targetType: z.string().min(1),
     targetId: Id,
-    userId: Id,
+    actorId: Id,
     emoji: z.string().min(1).max(50),
   }))
   .returns(z.promise(z.void()));

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { HexColor, Id, PaginationParams, SortOrder } from "../schema/common.js";
-import { Status, StatusCategory, WorkflowTransition } from "../schema/status.js";
+import {
+  DefaultStatusSetting,
+  Status,
+  StatusCategory,
+  WorkflowTransition,
+} from "../schema/status.js";
 import { PaginatedResult } from "./common.js";
 
 // ============================================================
@@ -10,6 +15,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a status */
 export const CreateStatus = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(100),
     category: StatusCategory,
     color: HexColor.optional(),
@@ -26,6 +32,7 @@ export const GetStatus = z.function()
 /** Update a status */
 export const UpdateStatus = z.function()
   .args(z.object({
+    actorId: Id,
     statusId: Id,
     name: z.string().min(1).max(100).optional(),
     category: StatusCategory.optional(),
@@ -37,7 +44,7 @@ export const UpdateStatus = z.function()
 
 /** Delete a status */
 export const DeleteStatus = z.function()
-  .args(z.object({ statusId: Id }))
+  .args(z.object({ actorId: Id, statusId: Id }))
   .returns(z.promise(z.void()));
 
 /** List all statuses */
@@ -55,6 +62,7 @@ export const ListStatuses = z.function()
 /** Create a workflow transition rule */
 export const CreateWorkflowTransition = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueTypeId: Id,
     fromStatusId: Id,
@@ -65,7 +73,7 @@ export const CreateWorkflowTransition = z.function()
 
 /** Delete a workflow transition rule */
 export const DeleteWorkflowTransition = z.function()
-  .args(z.object({ transitionId: Id }))
+  .args(z.object({ actorId: Id, transitionId: Id }))
   .returns(z.promise(z.void()));
 
 /** List workflow transitions for a project and issue type */
@@ -82,6 +90,7 @@ export const ListWorkflowTransitions = z.function()
 /** Bulk set workflow transitions (replace all for a project+issueType) */
 export const SetWorkflowTransitions = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueTypeId: Id,
     transitions: z.array(z.object({
@@ -93,3 +102,25 @@ export const SetWorkflowTransitions = z.function()
   .returns(z.promise(z.object({
     transitions: z.array(WorkflowTransition),
   })));
+
+// ============================================================
+// Default Status (initial status for new issues)
+// ============================================================
+
+/** Set the default status for a project + issue type */
+export const SetDefaultStatus = z.function()
+  .args(z.object({
+    actorId: Id,
+    projectId: Id,
+    issueTypeId: Id,
+    statusId: Id,
+  }))
+  .returns(z.promise(DefaultStatusSetting));
+
+/** Get the default status for a project + issue type */
+export const GetDefaultStatus = z.function()
+  .args(z.object({
+    projectId: Id,
+    issueTypeId: Id,
+  }))
+  .returns(z.promise(DefaultStatusSetting));

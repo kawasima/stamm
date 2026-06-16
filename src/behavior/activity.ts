@@ -5,6 +5,11 @@ import { PaginatedResult } from "./common.js";
 
 // ============================================================
 // Activity Log (read-only — entries are created implicitly by other operations)
+//
+// ActivityEntry is the canonical timeline and the source of derived
+// createdAt / updatedAt for entities (see schema/activity.ts). Issue time-based
+// sorts/filters (ListIssues.sortBy "createdAt"/"updatedAt", IssueFilter
+// created*/updated*) resolve here, not against the Issue body.
 // ============================================================
 
 /** List activity entries (project-scoped activity feed) */

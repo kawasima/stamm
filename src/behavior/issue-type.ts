@@ -10,6 +10,7 @@ import { PaginatedResult } from "./common.js";
 /** Create an issue type */
 export const CreateIssueType = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(100),
     color: HexColor.optional(),
     icon: z.string().max(50).optional(),
@@ -27,6 +28,7 @@ export const GetIssueType = z.function()
 /** Update an issue type */
 export const UpdateIssueType = z.function()
   .args(z.object({
+    actorId: Id,
     issueTypeId: Id,
     name: z.string().min(1).max(100).optional(),
     color: HexColor.optional(),
@@ -39,7 +41,7 @@ export const UpdateIssueType = z.function()
 
 /** Delete an issue type */
 export const DeleteIssueType = z.function()
-  .args(z.object({ issueTypeId: Id }))
+  .args(z.object({ actorId: Id, issueTypeId: Id }))
   .returns(z.promise(z.void()));
 
 /** List all issue types */

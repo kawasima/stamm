@@ -10,7 +10,7 @@ import { PaginatedResult, SortDirection } from "./common.js";
 
 /** Create (enable) a wiki for a project */
 export const CreateWiki = z.function()
-  .args(z.object({ projectId: Id }))
+  .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(Wiki));
 
 /** Get the wiki for a project */
@@ -20,12 +20,13 @@ export const GetWiki = z.function()
 
 /** Delete (disable) a wiki for a project */
 export const DeleteWiki = z.function()
-  .args(z.object({ projectId: Id }))
+  .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(z.void()));
 
 /** Set the start (home) page of a wiki */
 export const SetWikiStartPage = z.function()
   .args(z.object({
+    actorId: Id,
     wikiId: Id,
     wikiPageId: Id,
   }))
@@ -38,6 +39,7 @@ export const SetWikiStartPage = z.function()
 /** Create a wiki page */
 export const CreateWikiPage = z.function()
   .args(z.object({
+    actorId: Id,
     wikiId: Id,
     title: z.string().min(1).max(300),
     slug: Slug,
@@ -62,6 +64,7 @@ export const GetWikiPageBySlug = z.function()
 /** Update a wiki page (creates a new version) */
 export const UpdateWikiPage = z.function()
   .args(z.object({
+    actorId: Id,
     pageId: Id,
     title: z.string().min(1).max(300).optional(),
     body: MarkdownContent.optional(),
@@ -71,17 +74,17 @@ export const UpdateWikiPage = z.function()
 
 /** Delete a wiki page */
 export const DeleteWikiPage = z.function()
-  .args(z.object({ pageId: Id }))
+  .args(z.object({ actorId: Id, pageId: Id }))
   .returns(z.promise(z.void()));
 
 /** Lock a wiki page */
 export const LockWikiPage = z.function()
-  .args(z.object({ pageId: Id }))
+  .args(z.object({ actorId: Id, pageId: Id }))
   .returns(z.promise(WikiPage));
 
 /** Unlock a wiki page */
 export const UnlockWikiPage = z.function()
-  .args(z.object({ pageId: Id }))
+  .args(z.object({ actorId: Id, pageId: Id }))
   .returns(z.promise(WikiPage));
 
 /** List wiki pages in a wiki */

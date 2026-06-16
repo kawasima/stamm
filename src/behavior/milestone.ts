@@ -10,6 +10,7 @@ import { PaginatedResult, SortDirection } from "./common.js";
 /** Create a milestone in a project */
 export const CreateMilestone = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     name: z.string().min(1).max(200),
     description: z.string().max(5000).optional(),
@@ -27,6 +28,7 @@ export const GetMilestone = z.function()
 /** Update a milestone */
 export const UpdateMilestone = z.function()
   .args(z.object({
+    actorId: Id,
     milestoneId: Id,
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(5000).optional(),
@@ -38,7 +40,7 @@ export const UpdateMilestone = z.function()
 
 /** Delete a milestone */
 export const DeleteMilestone = z.function()
-  .args(z.object({ milestoneId: Id }))
+  .args(z.object({ actorId: Id, milestoneId: Id }))
   .returns(z.promise(z.void()));
 
 /** List milestones in a project */
@@ -59,6 +61,7 @@ export const ListMilestones = z.function()
 /** Close a milestone */
 export const CloseMilestone = z.function()
   .args(z.object({
+    actorId: Id,
     milestoneId: Id,
     releaseDate: DateString.optional(),
   }))
@@ -66,12 +69,12 @@ export const CloseMilestone = z.function()
 
 /** Reopen a milestone */
 export const ReopenMilestone = z.function()
-  .args(z.object({ milestoneId: Id }))
+  .args(z.object({ actorId: Id, milestoneId: Id }))
   .returns(z.promise(Milestone));
 
 /** Lock a milestone (Redmine: no further changes allowed) */
 export const LockMilestone = z.function()
-  .args(z.object({ milestoneId: Id }))
+  .args(z.object({ actorId: Id, milestoneId: Id }))
   .returns(z.promise(Milestone));
 
 // ============================================================

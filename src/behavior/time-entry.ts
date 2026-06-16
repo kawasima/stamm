@@ -10,6 +10,7 @@ import { PaginatedResult, SortDirection } from "./common.js";
 /** Create a time entry activity type */
 export const CreateTimeEntryActivity = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(100),
     sortOrder: SortOrder.optional(),
   }))
@@ -18,6 +19,7 @@ export const CreateTimeEntryActivity = z.function()
 /** Update a time entry activity type */
 export const UpdateTimeEntryActivity = z.function()
   .args(z.object({
+    actorId: Id,
     activityId: Id,
     name: z.string().min(1).max(100).optional(),
     sortOrder: SortOrder.optional(),
@@ -26,7 +28,7 @@ export const UpdateTimeEntryActivity = z.function()
 
 /** Delete a time entry activity type */
 export const DeleteTimeEntryActivity = z.function()
-  .args(z.object({ activityId: Id }))
+  .args(z.object({ actorId: Id, activityId: Id }))
   .returns(z.promise(z.void()));
 
 /** List all time entry activity types */
@@ -41,6 +43,7 @@ export const ListTimeEntryActivities = z.function()
 /** Log a time entry */
 export const CreateTimeEntry = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueId: Id.optional(),
     userId: Id,
@@ -59,6 +62,7 @@ export const GetTimeEntry = z.function()
 /** Update a time entry */
 export const UpdateTimeEntry = z.function()
   .args(z.object({
+    actorId: Id,
     timeEntryId: Id,
     activityId: Id.optional(),
     hours: Hours.optional(),
@@ -69,7 +73,7 @@ export const UpdateTimeEntry = z.function()
 
 /** Delete a time entry */
 export const DeleteTimeEntry = z.function()
-  .args(z.object({ timeEntryId: Id }))
+  .args(z.object({ actorId: Id, timeEntryId: Id }))
   .returns(z.promise(z.void()));
 
 /** List time entries with filtering */

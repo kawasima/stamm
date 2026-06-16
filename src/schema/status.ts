@@ -20,6 +20,17 @@ export const WorkflowTransition = Resource.extend({
   roleIds: z.array(Id),
 });
 
+/**
+ * Default status (R) - the initial status a new issue gets, per project + type.
+ * Replaces the old hard-coded "open" default.
+ */
+export const DefaultStatusSetting = Resource.extend({
+  projectId: Id,
+  issueTypeId: Id,
+  statusId: Id,
+});
+
 export type StatusCategory = z.infer<typeof StatusCategory>;
 export type Status = z.infer<typeof Status>;
 export type WorkflowTransition = z.infer<typeof WorkflowTransition>;
+export type DefaultStatusSetting = z.infer<typeof DefaultStatusSetting>;

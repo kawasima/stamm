@@ -31,12 +31,13 @@ export const GetUnreadNotificationCount = z.function()
 
 /** Mark a notification as read */
 export const MarkNotificationRead = z.function()
-  .args(z.object({ notificationId: Id }))
+  .args(z.object({ actorId: Id, notificationId: Id }))
   .returns(z.promise(NotificationRead));
 
 /** Mark all notifications as read for a user */
 export const MarkAllNotificationsRead = z.function()
   .args(z.object({
+    actorId: Id,
     recipientId: Id,
     projectId: Id.optional(),
   }))

@@ -15,6 +15,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a custom field definition */
 export const CreateCustomFieldDefinition = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(200),
     fieldType: CustomFieldType,
     description: z.string().max(500).optional(),
@@ -37,6 +38,7 @@ export const GetCustomFieldDefinition = z.function()
 /** Update a custom field definition */
 export const UpdateCustomFieldDefinition = z.function()
   .args(z.object({
+    actorId: Id,
     fieldId: Id,
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(500).optional(),
@@ -53,7 +55,7 @@ export const UpdateCustomFieldDefinition = z.function()
 
 /** Delete a custom field definition */
 export const DeleteCustomFieldDefinition = z.function()
-  .args(z.object({ fieldId: Id }))
+  .args(z.object({ actorId: Id, fieldId: Id }))
   .returns(z.promise(z.void()));
 
 /** List custom field definitions with optional scope filtering */

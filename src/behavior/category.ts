@@ -11,6 +11,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a category in a project */
 export const CreateCategory = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     name: z.string().min(1).max(100),
     defaultAssigneeId: Id.optional(),
@@ -25,6 +26,7 @@ export const GetCategory = z.function()
 /** Update a category */
 export const UpdateCategory = z.function()
   .args(z.object({
+    actorId: Id,
     categoryId: Id,
     name: z.string().min(1).max(100).optional(),
   }))
@@ -32,7 +34,7 @@ export const UpdateCategory = z.function()
 
 /** Delete a category */
 export const DeleteCategory = z.function()
-  .args(z.object({ categoryId: Id }))
+  .args(z.object({ actorId: Id, categoryId: Id }))
   .returns(z.promise(z.void()));
 
 /** List categories in a project */
@@ -50,6 +52,7 @@ export const ListCategories = z.function()
 /** Set the default assignee for a category */
 export const SetCategoryDefaultAssignee = z.function()
   .args(z.object({
+    actorId: Id,
     categoryId: Id,
     assigneeId: Id,
   }))
@@ -57,5 +60,5 @@ export const SetCategoryDefaultAssignee = z.function()
 
 /** Remove the default assignee from a category */
 export const RemoveCategoryDefaultAssignee = z.function()
-  .args(z.object({ categoryId: Id }))
+  .args(z.object({ actorId: Id, categoryId: Id }))
   .returns(z.promise(z.void()));

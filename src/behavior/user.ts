@@ -17,6 +17,7 @@ import { PaginatedResult, SortDirection } from "./common.js";
 /** Create a new user account */
 export const CreateUser = z.function()
   .args(z.object({
+    actorId: Id,
     login: z.string().min(1).max(100),
     email: z.string().email(),
     displayName: z.string().min(1).max(200),
@@ -39,6 +40,7 @@ export const GetUserByLogin = z.function()
 /** Update user profile fields */
 export const UpdateUser = z.function()
   .args(z.object({
+    actorId: Id,
     userId: Id,
     displayName: z.string().min(1).max(200).optional(),
     email: z.string().email().optional(),
@@ -50,7 +52,7 @@ export const UpdateUser = z.function()
 
 /** Delete a user */
 export const DeleteUser = z.function()
-  .args(z.object({ userId: Id }))
+  .args(z.object({ actorId: Id, userId: Id }))
   .returns(z.promise(z.void()));
 
 /** List users with filtering and pagination */
@@ -72,6 +74,7 @@ export const ListUsers = z.function()
 /** Activate or deactivate a user */
 export const SetUserStatus = z.function()
   .args(z.object({
+    actorId: Id,
     userId: Id,
     status: UserStatus,
   }))
@@ -89,6 +92,7 @@ export const GetUserStatus = z.function()
 /** Create a user group */
 export const CreateUserGroup = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
   }))
@@ -102,6 +106,7 @@ export const GetUserGroup = z.function()
 /** Update a user group */
 export const UpdateUserGroup = z.function()
   .args(z.object({
+    actorId: Id,
     groupId: Id,
     name: z.string().min(1).max(100).optional(),
     description: z.string().max(500).optional(),
@@ -110,7 +115,7 @@ export const UpdateUserGroup = z.function()
 
 /** Delete a user group */
 export const DeleteUserGroup = z.function()
-  .args(z.object({ groupId: Id }))
+  .args(z.object({ actorId: Id, groupId: Id }))
   .returns(z.promise(z.void()));
 
 /** List all user groups */
@@ -125,6 +130,7 @@ export const ListUserGroups = z.function()
 /** Add a user to a group */
 export const AddGroupMember = z.function()
   .args(z.object({
+    actorId: Id,
     groupId: Id,
     userId: Id,
   }))
@@ -133,6 +139,7 @@ export const AddGroupMember = z.function()
 /** Remove a user from a group */
 export const RemoveGroupMember = z.function()
   .args(z.object({
+    actorId: Id,
     groupId: Id,
     userId: Id,
   }))

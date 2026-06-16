@@ -10,10 +10,13 @@ import {
 import {
   Issue,
   IssueAssignee,
+  IssueDetail,
   IssueEstimation,
+  IssueInclude,
+  IssueListItem,
   IssueProgress,
   IssueSchedule,
-  IssueStatus,
+  IssueStatusChange,
   IssueVisibility,
 } from "../schema/issue.js";
 import {
@@ -24,8 +27,10 @@ import {
   IssueWatcher,
 } from "../schema/intersection.js";
 import { CustomFieldValue } from "../schema/custom-field.js";
-import { StatusCategory } from "../schema/status.js";
+import { IssueFilter } from "../schema/filter.js";
 import { PaginatedResult, SortDirection } from "./common.js";
+
+export { IssueFilter };
 
 // ============================================================
 // Issue CRUD
@@ -34,9 +39,12 @@ import { PaginatedResult, SortDirection } from "./common.js";
 /** Create a new issue (compound: can set assignees, labels, milestone, etc. in one call) */
 export const CreateIssue = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueTypeId: Id,
     priorityId: Id,
+    // Initial status; falls back to the project+type DefaultStatusSetting.
+    statusId: Id.optional(),
     subject: z.string().min(1).max(500),
     description: MarkdownContent.optional(),
     visibility: IssueVisibility.optional(),
@@ -53,19 +61,32 @@ export const CreateIssue = z.function()
   }))
   .returns(z.promise(Issue));
 
+// `actorId` on reads is the VIEWER: required to enforce Issue.visibility=private
+// and Role.issuesVisibility="own_or_assigned" (see schema/user.ts).
+
 /** Get an issue by ID */
 export const GetIssue = z.function()
-  .args(z.object({ issueId: Id }))
+  .args(z.object({ actorId: Id, issueId: Id }))
   .returns(z.promise(Issue));
 
 /** Get an issue by its key (e.g., "PROJ-123") */
 export const GetIssueByKey = z.function()
-  .args(z.object({ key: z.string() }))
+  .args(z.object({ actorId: Id, key: z.string() }))
   .returns(z.promise(Issue));
+
+/**
+ * Get an issue joined with its bounded satellites (assignees, labels, schedule,
+ * etc.) in one round-trip. Unbounded collections (comments, attachments,
+ * time-entries, children, history) stay behind their own List* operations.
+ */
+export const GetIssueDetail = z.function()
+  .args(z.object({ actorId: Id, issueId: Id }))
+  .returns(z.promise(IssueDetail));
 
 /** Update issue fields (subject, description, priority, type, custom fields, visibility) */
 export const UpdateIssue = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     issueTypeId: Id.optional(),
     priorityId: Id.optional(),
@@ -78,12 +99,13 @@ export const UpdateIssue = z.function()
 
 /** Delete an issue */
 export const DeleteIssue = z.function()
-  .args(z.object({ issueId: Id }))
+  .args(z.object({ actorId: Id, issueId: Id }))
   .returns(z.promise(z.void()));
 
 /** Move an issue to a different project */
 export const MoveIssue = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     targetProjectId: Id,
     newIssueTypeId: Id.optional(),
@@ -92,45 +114,25 @@ export const MoveIssue = z.function()
 
 // ============================================================
 // Issue Search / Filtering
+// (IssueFilter is defined in schema/filter.ts and re-exported above)
 // ============================================================
 
-/** Filter schema for issue queries */
-export const IssueFilter = z.object({
-  projectId: Id.optional(),
-  projectIds: z.array(Id).optional(),
-  issueTypeIds: z.array(Id).optional(),
-  statusIds: z.array(Id).optional(),
-  statusCategories: z.array(StatusCategory).optional(),
-  priorityIds: z.array(Id).optional(),
-  assigneeIds: z.array(Id).optional(),
-  authorId: Id.optional(),
-  labelIds: z.array(Id).optional(),
-  milestoneId: Id.optional(),
-  categoryId: Id.optional(),
-  parentIssueId: Id.optional(),
-  watcherUserId: Id.optional(),
-  visibility: IssueVisibility.optional(),
-  createdAfter: DateString.optional(),
-  createdBefore: DateString.optional(),
-  updatedAfter: DateString.optional(),
-  updatedBefore: DateString.optional(),
-  dueDateFrom: DateString.optional(),
-  dueDateTo: DateString.optional(),
-  hasNoDueDate: z.boolean().optional(),
-  isOverdue: z.boolean().optional(),
-  customField: z.object({
-    fieldId: Id,
-    value: z.union([z.string(), z.number(), z.boolean()]),
-  }).optional(),
-  query: z.string().optional(),
-});
-
-export type IssueFilter = z.infer<typeof IssueFilter>;
-
-/** List issues with rich filtering, sorting, and pagination */
+/**
+ * List issues with rich filtering, sorting, and pagination.
+ *
+ * `actorId` is the viewer (visibility scoping — see GetIssue note above).
+ * `include` embeds bounded satellites into each row (IssueListItem) to avoid
+ * N+1 when rendering a board/table; omit it to get bare Issue-shaped rows.
+ *
+ * sortBy "createdAt"/"updatedAt" resolve against ActivityEntry (the canonical
+ * timeline), and "dueDate" against IssueSchedule — neither lives on the Issue
+ * body (see schema/filter.ts, schema/activity.ts).
+ */
 export const ListIssues = z.function()
   .args(z.object({
+    actorId: Id,
     filter: IssueFilter,
+    include: z.array(IssueInclude).optional(),
     sortBy: z.enum([
       "number", "subject", "priority", "status", "issueType",
       "createdAt", "updatedAt", "dueDate", "assignee",
@@ -138,29 +140,42 @@ export const ListIssues = z.function()
     sortDirection: SortDirection.optional(),
     pagination: PaginationParams,
   }))
-  .returns(z.promise(PaginatedResult(Issue)));
+  .returns(z.promise(PaginatedResult(IssueListItem)));
 
 // ============================================================
 // Status Transitions (workflow-aware)
 // ============================================================
 
-/** Transition an issue to a new status (respects WorkflowTransition rules) */
+/**
+ * Transition an issue to a new status (respects WorkflowTransition rules).
+ * Updates Issue.statusId (current state) and appends an IssueStatusChange
+ * event (history) in the same operation.
+ */
 export const TransitionIssueStatus = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     toStatusId: Id,
   }))
   .returns(z.promise(Issue));
 
-/** Get available status transitions for an issue */
+/** Get available status transitions for an issue (viewer's roles gate them) */
 export const GetAvailableTransitions = z.function()
-  .args(z.object({ issueId: Id }))
+  .args(z.object({ actorId: Id, issueId: Id }))
   .returns(z.promise(z.object({
     transitions: z.array(z.object({
       toStatusId: Id,
       toStatusName: z.string(),
     })),
   })));
+
+/** List the status change history of an issue (cycle-time / time-in-status data) */
+export const ListIssueStatusHistory = z.function()
+  .args(z.object({
+    issueId: Id,
+    pagination: PaginationParams,
+  }))
+  .returns(z.promise(PaginatedResult(IssueStatusChange)));
 
 // ============================================================
 // Assignment (supports multiple assignees)
@@ -169,6 +184,7 @@ export const GetAvailableTransitions = z.function()
 /** Assign a user to an issue */
 export const AssignIssue = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     assigneeId: Id,
   }))
@@ -177,6 +193,7 @@ export const AssignIssue = z.function()
 /** Unassign a user from an issue */
 export const UnassignIssue = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     assigneeId: Id,
   }))
@@ -185,6 +202,7 @@ export const UnassignIssue = z.function()
 /** Replace all assignees of an issue at once */
 export const SetIssueAssignees = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     assigneeIds: z.array(Id),
   }))
@@ -202,6 +220,7 @@ export const ListIssueAssignees = z.function()
 /** Add a label to an issue */
 export const AddIssueLabel = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     labelId: Id,
   }))
@@ -210,6 +229,7 @@ export const AddIssueLabel = z.function()
 /** Remove a label from an issue */
 export const RemoveIssueLabel = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     labelId: Id,
   }))
@@ -218,6 +238,7 @@ export const RemoveIssueLabel = z.function()
 /** Replace all labels on an issue */
 export const SetIssueLabels = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     labelIds: z.array(Id),
   }))
@@ -235,6 +256,7 @@ export const ListIssueLabels = z.function()
 /** Set the category of an issue */
 export const SetIssueCategory = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     categoryId: Id,
   }))
@@ -242,7 +264,7 @@ export const SetIssueCategory = z.function()
 
 /** Remove category from an issue */
 export const RemoveIssueCategory = z.function()
-  .args(z.object({ issueId: Id }))
+  .args(z.object({ actorId: Id, issueId: Id }))
   .returns(z.promise(z.void()));
 
 // ============================================================
@@ -252,6 +274,7 @@ export const RemoveIssueCategory = z.function()
 /** Set the milestone of an issue */
 export const SetIssueMilestone = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     milestoneId: Id,
   }))
@@ -259,7 +282,7 @@ export const SetIssueMilestone = z.function()
 
 /** Remove milestone from an issue */
 export const RemoveIssueMilestone = z.function()
-  .args(z.object({ issueId: Id }))
+  .args(z.object({ actorId: Id, issueId: Id }))
   .returns(z.promise(z.void()));
 
 // ============================================================
@@ -269,6 +292,7 @@ export const RemoveIssueMilestone = z.function()
 /** Set the parent of an issue (making it a subtask) */
 export const SetIssueParent = z.function()
   .args(z.object({
+    actorId: Id,
     childIssueId: Id,
     parentIssueId: Id,
   }))
@@ -276,7 +300,7 @@ export const SetIssueParent = z.function()
 
 /** Remove parent relationship */
 export const RemoveIssueParent = z.function()
-  .args(z.object({ childIssueId: Id }))
+  .args(z.object({ actorId: Id, childIssueId: Id }))
   .returns(z.promise(z.void()));
 
 /** List child issues (subtasks) of an issue */
@@ -294,16 +318,16 @@ export const ListChildIssues = z.function()
 /** Watch an issue */
 export const WatchIssue = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
-    userId: Id,
   }))
   .returns(z.promise(IssueWatcher));
 
 /** Unwatch an issue */
 export const UnwatchIssue = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
-    userId: Id,
   }))
   .returns(z.promise(z.void()));
 
@@ -327,6 +351,7 @@ export const ListIssueWatchers = z.function()
 /** Set or update the schedule (start/due date) of an issue */
 export const SetIssueSchedule = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     startDate: DateString.optional(),
     dueDate: DateString.optional(),
@@ -336,6 +361,7 @@ export const SetIssueSchedule = z.function()
 /** Set or update the estimated hours of an issue */
 export const SetIssueEstimation = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     estimatedHours: Hours,
   }))
@@ -344,6 +370,7 @@ export const SetIssueEstimation = z.function()
 /** Set or update the done ratio (progress percentage) of an issue */
 export const SetIssueProgress = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     doneRatio: Percentage,
   }))
@@ -356,6 +383,7 @@ export const SetIssueProgress = z.function()
 /** Bulk update multiple issues at once */
 export const BulkUpdateIssues = z.function()
   .args(z.object({
+    actorId: Id,
     issueIds: z.array(Id).min(1),
     priorityId: Id.optional(),
     issueTypeId: Id.optional(),
@@ -378,6 +406,7 @@ export const BulkUpdateIssues = z.function()
 /** Bulk delete multiple issues */
 export const BulkDeleteIssues = z.function()
   .args(z.object({
+    actorId: Id,
     issueIds: z.array(Id).min(1),
   }))
   .returns(z.promise(z.object({

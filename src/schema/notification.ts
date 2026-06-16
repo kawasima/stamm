@@ -8,8 +8,11 @@ export const NotificationEventType = z.enum([
   "issue.assigned",
   "issue.commented",
   "issue.closed",
+  "issue.iteration_set",
   "milestone.created",
   "milestone.closed",
+  "iteration.started",
+  "iteration.closed",
   "wiki.updated",
 ]);
 

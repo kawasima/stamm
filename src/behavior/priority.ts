@@ -10,6 +10,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a priority */
 export const CreatePriority = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(100),
     color: HexColor.optional(),
     sortOrder: SortOrder.optional(),
@@ -24,6 +25,7 @@ export const GetPriority = z.function()
 /** Update a priority */
 export const UpdatePriority = z.function()
   .args(z.object({
+    actorId: Id,
     priorityId: Id,
     name: z.string().min(1).max(100).optional(),
     color: HexColor.optional(),
@@ -33,7 +35,7 @@ export const UpdatePriority = z.function()
 
 /** Delete a priority */
 export const DeletePriority = z.function()
-  .args(z.object({ priorityId: Id }))
+  .args(z.object({ actorId: Id, priorityId: Id }))
   .returns(z.promise(z.void()));
 
 /** List all priorities */

@@ -12,7 +12,7 @@ export const CreateAttachment = z.function()
   .args(z.object({
     targetType: z.string().min(1),
     targetId: Id,
-    authorId: Id,
+    actorId: Id,
     filename: z.string().min(1).max(500),
     contentType: z.string().max(200),
     sizeBytes: z.number().int().min(0),
@@ -28,7 +28,7 @@ export const GetAttachment = z.function()
 
 /** Delete an attachment */
 export const DeleteAttachment = z.function()
-  .args(z.object({ attachmentId: Id }))
+  .args(z.object({ actorId: Id, attachmentId: Id }))
   .returns(z.promise(z.void()));
 
 /** List attachments on a target */

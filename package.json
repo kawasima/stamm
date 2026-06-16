@@ -5,14 +5,28 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "stamm-mcp": "dist/bin/stamm-mcp.js",
+    "stamm-http": "dist/bin/stamm-http.js"
+  },
   "scripts": {
-    "build": "tsc",
-    "check": "tsc --noEmit"
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "mcp": "node dist/bin/stamm-mcp.js",
+    "http": "node dist/bin/stamm-http.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.11.1",
+    "jose": "^6.2.3",
+    "kysely": "^0.29.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.9"
   }
 }

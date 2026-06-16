@@ -17,6 +17,7 @@ import { PaginatedResult, SortDirection } from "./common.js";
 /** Create a new project */
 export const CreateProject = z.function()
   .args(z.object({
+    actorId: Id,
     identifier: Slug,
     name: z.string().min(1).max(200),
     description: z.string().max(5000).optional(),
@@ -38,6 +39,7 @@ export const GetProjectByIdentifier = z.function()
 /** Update a project */
 export const UpdateProject = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(5000).optional(),
@@ -46,7 +48,7 @@ export const UpdateProject = z.function()
 
 /** Delete a project and all associated data */
 export const DeleteProject = z.function()
-  .args(z.object({ projectId: Id }))
+  .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(z.void()));
 
 /** List projects with filtering */
@@ -69,17 +71,18 @@ export const ListProjects = z.function()
 
 /** Archive a project */
 export const ArchiveProject = z.function()
-  .args(z.object({ projectId: Id }))
+  .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(ProjectCategory));
 
 /** Unarchive (reactivate) a project */
 export const UnarchiveProject = z.function()
-  .args(z.object({ projectId: Id }))
+  .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(ProjectCategory));
 
 /** Change project visibility */
 export const SetProjectVisibility = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     visibility: ProjectVisibility,
   }))
@@ -92,6 +95,7 @@ export const SetProjectVisibility = z.function()
 /** Set parent of a project */
 export const SetProjectParent = z.function()
   .args(z.object({
+    actorId: Id,
     childProjectId: Id,
     parentProjectId: Id,
   }))
@@ -99,7 +103,7 @@ export const SetProjectParent = z.function()
 
 /** Remove parent relationship */
 export const RemoveProjectParent = z.function()
-  .args(z.object({ childProjectId: Id }))
+  .args(z.object({ actorId: Id, childProjectId: Id }))
   .returns(z.promise(z.void()));
 
 /** Get sub-projects of a project */
@@ -122,6 +126,7 @@ export const GetProjectAncestors = z.function()
 /** Add a member to a project with specified roles */
 export const AddProjectMember = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     userId: Id,
     roleIds: z.array(Id).min(1),
@@ -131,6 +136,7 @@ export const AddProjectMember = z.function()
 /** Update a member's roles in a project */
 export const UpdateProjectMember = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     userId: Id,
     roleIds: z.array(Id).min(1),
@@ -140,6 +146,7 @@ export const UpdateProjectMember = z.function()
 /** Remove a member from a project */
 export const RemoveProjectMember = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     userId: Id,
   }))

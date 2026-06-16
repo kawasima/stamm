@@ -10,6 +10,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a relation between two issues */
 export const CreateIssueRelation = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     relatedIssueId: Id,
     relationType: IssueRelationType,
@@ -19,7 +20,7 @@ export const CreateIssueRelation = z.function()
 
 /** Delete a relation */
 export const DeleteIssueRelation = z.function()
-  .args(z.object({ relationId: Id }))
+  .args(z.object({ actorId: Id, relationId: Id }))
   .returns(z.promise(z.void()));
 
 /** List relations for an issue */

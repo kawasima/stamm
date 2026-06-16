@@ -14,6 +14,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a webhook */
 export const CreateWebhook = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     url: UrlString,
     secret: z.string().optional(),
@@ -29,6 +30,7 @@ export const GetWebhook = z.function()
 /** Update a webhook */
 export const UpdateWebhook = z.function()
   .args(z.object({
+    actorId: Id,
     webhookId: Id,
     url: UrlString.optional(),
     secret: z.string().optional(),
@@ -39,7 +41,7 @@ export const UpdateWebhook = z.function()
 
 /** Delete a webhook */
 export const DeleteWebhook = z.function()
-  .args(z.object({ webhookId: Id }))
+  .args(z.object({ actorId: Id, webhookId: Id }))
   .returns(z.promise(z.void()));
 
 /** List webhooks for a project */
@@ -53,7 +55,7 @@ export const ListWebhooks = z.function()
 
 /** Test-fire a webhook (sends a test payload) */
 export const TestWebhook = z.function()
-  .args(z.object({ webhookId: Id }))
+  .args(z.object({ actorId: Id, webhookId: Id }))
   .returns(z.promise(z.object({
     success: z.boolean(),
     statusCode: z.number().int().optional(),

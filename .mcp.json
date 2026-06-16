@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "stamm": {
+      "command": "node",
+      "args": ["dist/bin/stamm-mcp.js"],
+      "env": {
+        "STAMM_DB": "stamm.db"
+      }
+    }
+  }
+}

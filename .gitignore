@@ -1,3 +1,21 @@
+# Dependencies & build output
 node_modules/
 dist/
 *.tsbuildinfo
+
+# SQLite database (and WAL/SHM sidecar files)
+stamm.db
+stamm.db-journal
+stamm.db-wal
+stamm.db-shm
+*.sqlite
+*.sqlite3
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# Logs
+*.log
+
+# OS files
+.DS_Store

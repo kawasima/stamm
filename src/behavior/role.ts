@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Id, PaginationParams } from "../schema/common.js";
-import { Role, Permission } from "../schema/user.js";
+import { Role, Permission, IssuesVisibility } from "../schema/user.js";
 import { PaginatedResult } from "./common.js";
 
 // ============================================================
@@ -10,9 +10,11 @@ import { PaginatedResult } from "./common.js";
 /** Create a role */
 export const CreateRole = z.function()
   .args(z.object({
+    actorId: Id,
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
     permissions: z.array(Permission),
+    issuesVisibility: IssuesVisibility.optional(),
     builtinKind: z.enum(["admin", "member", "viewer"]).optional(),
   }))
   .returns(z.promise(Role));
@@ -25,16 +27,18 @@ export const GetRole = z.function()
 /** Update a role */
 export const UpdateRole = z.function()
   .args(z.object({
+    actorId: Id,
     roleId: Id,
     name: z.string().min(1).max(100).optional(),
     description: z.string().max(500).optional(),
     permissions: z.array(Permission).optional(),
+    issuesVisibility: IssuesVisibility.optional(),
   }))
   .returns(z.promise(Role));
 
 /** Delete a role */
 export const DeleteRole = z.function()
-  .args(z.object({ roleId: Id }))
+  .args(z.object({ actorId: Id, roleId: Id }))
   .returns(z.promise(z.void()));
 
 /** List all roles */

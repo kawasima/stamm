@@ -10,6 +10,7 @@ import { PaginatedResult } from "./common.js";
 /** Create a label in a project */
 export const CreateLabel = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
@@ -25,6 +26,7 @@ export const GetLabel = z.function()
 /** Update a label */
 export const UpdateLabel = z.function()
   .args(z.object({
+    actorId: Id,
     labelId: Id,
     name: z.string().min(1).max(100).optional(),
     description: z.string().max(500).optional(),
@@ -34,7 +36,7 @@ export const UpdateLabel = z.function()
 
 /** Delete a label */
 export const DeleteLabel = z.function()
-  .args(z.object({ labelId: Id }))
+  .args(z.object({ actorId: Id, labelId: Id }))
   .returns(z.promise(z.void()));
 
 /** List labels in a project */
