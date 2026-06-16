@@ -1,17 +1,17 @@
-# stamm
+# Stamm
 
 [![License: EPL 2.0](https://img.shields.io/badge/License-EPL_2.0-red.svg)](https://www.eclipse.org/legal/epl-2.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-000000)](https://modelcontextprotocol.io)
 [![Validated with Zod](https://img.shields.io/badge/validated_with-Zod-3E67B1)](https://zod.dev)
 
-![stamm concept](docs/images/concept.png)
-
 A headless project management system. There is no UI — stamm ships the **model**
 and the **behavior** of issue tracking, and exposes them over the
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) so that any
 client (Claude Code, an editor, your own front end) can drive it. If you want a
 UI, build the one you want on top of these tools.
+
+![stamm concept](docs/images/concept.png)
 
 The domain model is written in [Zod](https://zod.dev) first, drawing on
 [Redmine](https://www.redmine.org), [GitHub Issues](https://github.com/features/issues),
