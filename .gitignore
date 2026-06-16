@@ -11,6 +11,10 @@ stamm.db-shm
 *.sqlite
 *.sqlite3
 
+# Seeded signing keys (contain private keys; written once on first boot)
+stamm-seed-keys.json
+*-seed-keys.json
+
 # Local Claude Code settings (machine-specific)
 .claude/settings.local.json
 

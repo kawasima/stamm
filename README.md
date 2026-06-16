@@ -12,7 +12,7 @@ and [Nulab Backlog](https://backlog.com).
 
 ## Layers
 
-```
+```text
 src/
   schema/    Zod schemas — the single source of truth for every entity and operation
   behavior/  Behavior contracts — the operations exposed over the domain (the interface)
@@ -29,14 +29,39 @@ CRUD (status, priority, label, issue type, category, role, user, group) is folde
 into the generic `admin_*` tools, and issue satellites (assignees, labels,
 watchers, schedule) are folded into the compound `issue_update` tool.
 
-## Data model
+## Features
 
-Projects own issues. An issue carries a type, status, priority, optional
-assignees, labels, category, milestone, iteration, parent/subtasks, relations,
-comments, attachment references, and time entries. Status changes respect a
-configurable workflow (allowed transitions per status set), and activity
-produces notifications for watchers. Custom fields, wikis, views, automations,
-and templates round out the model.
+What the tools cover today (one MCP tool per operation unless noted):
+
+- **Issues** — create / read / update / delete; fetch by id, by key (`PROJ-123`),
+  or as a detail view hydrated with its satellites; rich search (filter, sort,
+  paginate); subtasks; move between projects; watchers.
+- **Issue attributes** — assignees, labels, category, milestone, iteration,
+  parent, schedule (start / due), estimation, progress, and custom-field values,
+  all set through one compound `issue_update`.
+- **Workflow** — status transitions constrained by a per-project/type workflow,
+  with "available transitions" and status-change history.
+- **Issue relations** — relate / unrelate / list (blocks, relates-to, …).
+- **Comments** — add / edit / delete / list, with visibility.
+- **Attachments** — attach / get / delete / list by reference (binary upload is
+  not supported in v1).
+- **Projects** — CRUD; archive / unarchive; visibility; parent / sub-projects;
+  membership with roles.
+- **Milestones** — CRUD; close / reopen / lock; progress.
+- **Iterations** (sprints) — CRUD; progress.
+- **Time tracking** — log / read / update / delete entries; list; summary.
+- **Notifications** — list; unread count; mark one or all read.
+- **Configuration** (admin, via `admin_*`) — statuses, priorities, labels, issue
+  types, categories, roles, users, user groups; workflow transitions; default
+  status per project/type.
+- **Access control** — role-based permissions per project, with issue-visibility
+  scoping (all vs own/assigned); account status (active / inactive); groups.
+- **Authentication & transport** — local stdio (single pinned user) and remote
+  HTTP with per-user EdDSA JWT auth; admin-managed signing keys (issue / revoke
+  / list).
+
+Modeled in `schema/` but not yet exposed as operations: wikis, saved views,
+automations, templates, drafts, webhooks, and the activity feed.
 
 ## Getting started
 
@@ -99,16 +124,28 @@ npm run http       # node dist/bin/stamm-http.js
 - `STAMM_HTTP_HOST` — listen host (default `127.0.0.1`)
 - `STAMM_HTTP_PATH` — MCP endpoint path (default `/mcp`)
 - `STAMM_JWT_ISS` / `STAMM_JWT_AUD` — optional expected `iss` / `aud` claims
+- `STAMM_SEED_KEYS_FILE` — where first-boot seed private keys are written (default `./stamm-seed-keys.json`)
+
+> **Run it behind TLS.** The server speaks plain HTTP. Bearer tokens and the
+> private keys returned by `user_key_issue` are secrets — terminate TLS at a
+> reverse proxy (or keep `STAMM_HTTP_HOST` on loopback and proxy to it). Don't
+> expose plain HTTP beyond localhost.
 
 **Authentication.** Each user holds an Ed25519 keypair. The server stores only
-the public key; the user keeps the private key and signs short-lived JWTs with
-it (`alg: EdDSA`, `kid` = the key id, `sub` = their user id). On every request
-the server looks up the subject's public key and verifies the signature.
+the public key; the user keeps the private key and signs **short-lived** JWTs
+with it (`alg: EdDSA`, `kid` = the key id, `sub` = their user id, and a required
+`exp`). On every request the server looks up the subject's public key, verifies
+the signature, enforces `exp` plus a max token age, and checks the account is
+still active. Tokens without `exp`, beyond the max age, or for a
+deleted/deactivated user are rejected. Always set `kid` so the lookup hits one
+key directly.
 
-A fresh database bootstraps an admin and a member and mints a key for each —
-the private keys are printed to **stderr once, on first run**. Save them. To
-mint keys for more users, an admin calls the `user_key_issue` tool (over either
-transport); the private key is returned exactly once.
+A fresh database bootstraps an admin and a member and mints a key for each. The
+private keys are written **once** to `stamm-seed-keys.json` (mode `0600`; path
+overridable via `STAMM_SEED_KEYS_FILE`) — distribute them to their owners and
+delete the file. To mint keys for more users, an admin calls the
+`user_key_issue` tool (over either transport); the private key is returned
+exactly once.
 
 Sign a request token from an issued private JWK (using [jose](https://github.com/panva/jose)):
 

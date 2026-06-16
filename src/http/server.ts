@@ -13,7 +13,14 @@ export interface HttpServerOptions {
   /** Path the MCP endpoint is served on (default "/mcp"). */
   path?: string;
   authConfig?: AuthConfig;
+  /** Max request body size in bytes (default 1 MiB). Larger bodies get 413. */
+  maxBodyBytes?: number;
 }
+
+const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+
+/** Thrown by readJson when the body exceeds the cap; mapped to HTTP 413. */
+class PayloadTooLargeError extends Error {}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -21,9 +28,15 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(text);
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, maxBytes: number): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let total = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    total += buf.length;
+    if (total > maxBytes) throw new PayloadTooLargeError(`request body exceeds ${maxBytes} bytes`);
+    chunks.push(buf);
+  }
   if (chunks.length === 0) return undefined;
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
@@ -41,6 +54,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
  */
 export function createHttpServer(opts: HttpServerOptions): Server {
   const path = opts.path ?? "/mcp";
+  const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
 
   return createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
@@ -58,11 +72,15 @@ export function createHttpServer(opts: HttpServerOptions): Server {
         });
         await server.connect(transport);
 
-        const parsedBody = req.method === "POST" ? await readJson(req) : undefined;
+        const parsedBody = req.method === "POST" ? await readJson(req, maxBodyBytes) : undefined;
         await transport.handleRequest(req, res, parsedBody);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
           if (!res.headersSent) sendJson(res, 401, { error: err.message });
+          return;
+        }
+        if (err instanceof PayloadTooLargeError) {
+          if (!res.headersSent) sendJson(res, 413, { error: err.message });
           return;
         }
         console.error("[stamm-http] error:", err);

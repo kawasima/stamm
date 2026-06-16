@@ -22,6 +22,7 @@ interface SignOpts {
   sub: string;
   kid?: string;
   exp?: string | number;
+  iat?: number;
   iss?: string;
   aud?: string;
 }
@@ -30,7 +31,7 @@ async function signEdDSA(privateJwk: Record<string, unknown>, opts: SignOpts): P
   let b = new SignJWT({})
     .setProtectedHeader({ alg: "EdDSA", ...(opts.kid ? { kid: opts.kid } : {}) })
     .setSubject(opts.sub)
-    .setIssuedAt();
+    .setIssuedAt(opts.iat);
   if (opts.exp !== undefined) b = b.setExpirationTime(opts.exp);
   if (opts.iss) b = b.setIssuer(opts.iss);
   if (opts.aud) b = b.setAudience(opts.aud);
@@ -84,6 +85,33 @@ describe("authenticate", () => {
     await expect(authenticate(ctx, undefined)).rejects.toBeInstanceOf(UnauthorizedError);
     await expect(authenticate(ctx, "Basic abc")).rejects.toBeInstanceOf(UnauthorizedError);
     await expect(authenticate(ctx, "Bearer not.a.jwt")).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it("rejects a token with no expiration", async () => {
+    const { ctx, alice, issued } = await world();
+    const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId }); // no exp
+    await expect(authenticate(ctx, `Bearer ${token}`)).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it("rejects a token older than the max age even if exp is far in the future", async () => {
+    const { ctx, alice, issued } = await world();
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, iat: now - 3600, exp: now + 3600 });
+    await expect(authenticate(ctx, `Bearer ${token}`, { maxTokenAgeSec: 900 })).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it("rejects a token for a deactivated user", async () => {
+    const { ctx, alice, issued } = await world();
+    await ctx.db.insertInto("user_statuses").values({ id: "st-1", user_id: alice.id, status: "inactive" }).execute();
+    const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m" });
+    await expect(authenticate(ctx, `Bearer ${token}`)).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it("rejects a token for a deleted user (credential outlives the user row)", async () => {
+    const { ctx, alice, issued } = await world();
+    await ctx.db.deleteFrom("users").where("id", "=", alice.id).execute();
+    const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m" });
+    await expect(authenticate(ctx, `Bearer ${token}`)).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
   it("rejects an HMAC (alg-confusion) token claiming a victim subject", async () => {
