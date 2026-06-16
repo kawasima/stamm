@@ -1,5 +1,12 @@
 # stamm
 
+[![License: EPL 2.0](https://img.shields.io/badge/License-EPL_2.0-red.svg)](https://www.eclipse.org/legal/epl-2.0/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-000000)](https://modelcontextprotocol.io)
+[![Validated with Zod](https://img.shields.io/badge/validated_with-Zod-3E67B1)](https://zod.dev)
+
+![stamm concept](docs/images/concept.png)
+
 A headless project management system. There is no UI — stamm ships the **model**
 and the **behavior** of issue tracking, and exposes them over the
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) so that any
@@ -184,3 +191,7 @@ with the same `Authorization` header. Requests without a valid token get `401`.
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run mcp` | Start the MCP server over stdio (single pinned user) |
 | `npm run http` | Start the MCP server over HTTP (per-user JWT auth) |
+
+## License
+
+[Eclipse Public License 2.0](LICENSE) (EPL-2.0).
