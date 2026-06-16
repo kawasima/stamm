@@ -10,6 +10,11 @@ stamm.db-wal
 stamm.db-shm
 *.sqlite
 *.sqlite3
+# the quickstart example writes here
+quickstart.db
+quickstart.db-journal
+quickstart.db-wal
+quickstart.db-shm
 
 # Seeded signing keys (contain private keys; written once on first boot)
 stamm-seed-keys.json

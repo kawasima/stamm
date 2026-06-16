@@ -85,6 +85,51 @@ The first run against a fresh database bootstraps an admin user, a member, a
 default project, and a default issue type / priority / status, so the server is
 usable immediately.
 
+## Quickstart — create and read an issue
+
+Here is the whole loop end to end: spawn the stdio server, file one issue, read
+it back. It uses the official [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+client and talks to the same tools any client would. The runnable version is
+[`sim/quickstart.mjs`](sim/quickstart.mjs) — after `npm run build`, run
+`node sim/quickstart.mjs` (prints `created default-1: Login is broken`).
+
+```js
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+const transport = new StdioClientTransport({
+  command: "node",
+  args: ["dist/bin/stamm-mcp.js"],
+  env: { ...process.env, STAMM_DB: "quickstart.db" },
+});
+const client = new Client({ name: "quickstart", version: "0" });
+await client.connect(transport);
+
+const call = async (name, args = {}) => {
+  const res = await client.callTool({ name, arguments: args });
+  if (res.isError) throw new Error(`${name}: ${JSON.stringify(res.content)}`);
+  return res.structuredContent;
+};
+
+// The stdio transport pins you to the seeded member, so calls carry no actorId.
+// Reads stay open to members — resolve the seeded ids needed to file an issue.
+const project = await call("project_get_by_identifier", { identifier: "default" });
+const page = { pagination: { limit: 20 } };
+const types = await call("admin_list", { params: { resource: "issue_type", ...page } });
+const priorities = await call("admin_list", { params: { resource: "priority", ...page } });
+
+const created = await call("issue_create", {
+  projectId: project.id,
+  issueTypeId: types.items[0].id,
+  priorityId: priorities.items[0].id,
+  subject: "Login is broken",
+});
+const issue = await call("issue_get", { issueId: created.id });
+console.log(`created ${issue.key}-${issue.number}: ${issue.subject}`);
+
+await client.close();
+```
+
 ## Running the MCP server
 
 stamm exposes the same tools over two transports. Run `npm run build` before
