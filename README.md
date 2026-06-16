@@ -17,25 +17,6 @@ The domain model is written in [Zod](https://zod.dev) first, drawing on
 [Redmine](https://www.redmine.org), [GitHub Issues](https://github.com/features/issues),
 and [Nulab Backlog](https://backlog.com).
 
-## Layers
-
-```text
-src/
-  schema/    Zod schemas — the single source of truth for every entity and operation
-  behavior/  Behavior contracts — the operations exposed over the domain (the interface)
-  impl/      SQL-backed implementation (Kysely; runs on SQLite today, Postgres-portable)
-  mcp/       MCP server that maps each behavior contract onto an MCP tool
-  http/      Remote HTTP transport + per-user JWT (EdDSA) authentication
-  bin/       Entry points — stdio (stamm-mcp) and remote HTTP (stamm-http)
-```
-
-Each behavior is a contract (input/output Zod schema) in `schema/`, an interface
-in `behavior/`, and a Kysely-backed implementation in `impl/domains/`. The MCP
-layer in `mcp/catalog.ts` wires most behaviors 1:1 onto tools; config-resource
-CRUD (status, priority, label, issue type, category, role, user, group) is folded
-into the generic `admin_*` tools, and issue satellites (assignees, labels,
-watchers, schedule) are folded into the compound `issue_update` tool.
-
 ## Features
 
 What the tools cover today (one MCP tool per operation unless noted):
@@ -69,6 +50,25 @@ What the tools cover today (one MCP tool per operation unless noted):
 
 Modeled in `schema/` but not yet exposed as operations: wikis, saved views,
 automations, templates, drafts, webhooks, and the activity feed.
+
+## Layers
+
+```text
+src/
+  schema/    Zod schemas — the single source of truth for every entity and operation
+  behavior/  Behavior contracts — the operations exposed over the domain (the interface)
+  impl/      SQL-backed implementation (Kysely; runs on SQLite today, Postgres-portable)
+  mcp/       MCP server that maps each behavior contract onto an MCP tool
+  http/      Remote HTTP transport + per-user JWT (EdDSA) authentication
+  bin/       Entry points — stdio (stamm-mcp) and remote HTTP (stamm-http)
+```
+
+Each behavior is a contract (input/output Zod schema) in `schema/`, an interface
+in `behavior/`, and a Kysely-backed implementation in `impl/domains/`. The MCP
+layer in `mcp/catalog.ts` wires most behaviors 1:1 onto tools; config-resource
+CRUD (status, priority, label, issue type, category, role, user, group) is folded
+into the generic `admin_*` tools, and issue satellites (assignees, labels,
+watchers, schedule) are folded into the compound `issue_update` tool.
 
 ## Getting started
 
