@@ -4,6 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
+import { assertGlobalAdmin } from "../permissions.js";
 
 type WorkflowConfigMethods =
   | "listWorkflowTransitions"
@@ -25,7 +26,8 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
       return { transitions: rows.map((r) => transitionCodec.decode(r)) };
     },
 
-    setWorkflowTransitions: async ({ projectId, issueTypeId, transitions }) => {
+    setWorkflowTransitions: async ({ actorId, projectId, issueTypeId, transitions }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const created: WorkflowTransitionT[] = [];
       await db.transaction().execute(async (trx) => {
         await trx
@@ -60,7 +62,8 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
       return dssCodec.decode(row);
     },
 
-    setDefaultStatus: async ({ projectId, issueTypeId, statusId }) => {
+    setDefaultStatus: async ({ actorId, projectId, issueTypeId, statusId }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const existing = await db
         .selectFrom("default_status_settings")
         .select("id")

@@ -107,7 +107,7 @@ describe("MCP end-to-end over a real SQL backend", () => {
     const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
     await client.callTool({ name: "issue_create", arguments: { ...base, subject: "S", assigneeIds: [w.bob.id] } });
 
-    const count = await client.callTool({ name: "notification_unread_count", arguments: { recipientId: w.bob.id } });
+    const count = await client.callTool({ name: "notification_unread_count", arguments: { actorId: w.bob.id, recipientId: w.bob.id } });
     expect(count.structuredContent).toMatchObject({ count: 1 });
   });
 });

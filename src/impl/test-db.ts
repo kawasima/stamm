@@ -9,3 +9,17 @@ export async function createTestDb(): Promise<Kysely<Database>> {
   await migrateToLatest(db);
   return db;
 }
+
+/**
+ * Insert a global-admin user with a fixed id, bypassing `genId` so deterministic
+ * counting-id tests aren't shifted. Config/project/workflow administration is
+ * now admin-gated, so a test that exercises those writes needs a real admin row
+ * to use as the actor.
+ */
+export async function seedAdmin(db: Kysely<Database>, id = "admin"): Promise<string> {
+  await db
+    .insertInto("users")
+    .values({ id, login: id, email: `${id}@test.local`, display_name: id, language: "en", kind: "admin" })
+    .execute();
+  return id;
+}

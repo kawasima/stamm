@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ForbiddenError } from "./errors.js";
-import { createTestDb } from "./test-db.js";
+import { createTestDb, seedAdmin } from "./test-db.js";
 import { makeCtx, type Ctx } from "./ctx.js";
 import { configBehaviors } from "./domains/config.js";
 import { projectBehaviors } from "./domains/project.js";
@@ -14,6 +14,7 @@ function countingIds(): () => string {
 async function setup() {
   const db = await createTestDb();
   const ctx: Ctx = makeCtx(db, { genId: countingIds() });
+  await seedAdmin(db, "admin"); // "admin" is the admin actor these tests already use
   const config = configBehaviors(ctx);
   const project = projectBehaviors(ctx);
   return { db, ctx, config, project };

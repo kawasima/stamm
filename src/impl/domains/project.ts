@@ -9,6 +9,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { assertGlobalAdmin } from "../permissions.js";
 
 type ProjectMethods =
   | "createProject" | "getProject" | "getProjectByIdentifier" | "updateProject" | "deleteProject" | "listProjects"
@@ -47,6 +48,7 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
 
   const impl: Pick<Behaviors, ProjectMethods> = {
     createProject: async (args) => {
+      await assertGlobalAdmin(ctx, args.actorId);
       const project = Project.parse({
         id: ctx.genId(),
         identifier: args.identifier,
@@ -82,7 +84,8 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return projectCodec.decode(row);
     },
 
-    updateProject: async ({ projectId, name, description }) => {
+    updateProject: async ({ actorId, projectId, name, description }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const row = await db.selectFrom("projects").selectAll().where("id", "=", projectId).executeTakeFirst();
       if (!row) throw new NotFoundError("Project", projectId);
       const current = projectCodec.decode(row);
@@ -95,7 +98,8 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return merged;
     },
 
-    deleteProject: async ({ projectId }) => {
+    deleteProject: async ({ actorId, projectId }) => {
+      await assertGlobalAdmin(ctx, actorId);
       await db.transaction().execute(async (trx) => {
         const res = await trx.deleteFrom("projects").where("id", "=", projectId).executeTakeFirst();
         if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError("Project", projectId);
@@ -141,11 +145,21 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    archiveProject: async ({ projectId }) => setCategory({ ...(await loadCategory(projectId)), lifecycle: "archived" }),
-    unarchiveProject: async ({ projectId }) => setCategory({ ...(await loadCategory(projectId)), lifecycle: "active" }),
-    setProjectVisibility: async ({ projectId, visibility }) => setCategory({ ...(await loadCategory(projectId)), visibility }),
+    archiveProject: async ({ actorId, projectId }) => {
+      await assertGlobalAdmin(ctx, actorId);
+      return setCategory({ ...(await loadCategory(projectId)), lifecycle: "archived" });
+    },
+    unarchiveProject: async ({ actorId, projectId }) => {
+      await assertGlobalAdmin(ctx, actorId);
+      return setCategory({ ...(await loadCategory(projectId)), lifecycle: "active" });
+    },
+    setProjectVisibility: async ({ actorId, projectId, visibility }) => {
+      await assertGlobalAdmin(ctx, actorId);
+      return setCategory({ ...(await loadCategory(projectId)), visibility });
+    },
 
-    setProjectParent: async ({ childProjectId, parentProjectId }) => {
+    setProjectParent: async ({ actorId, childProjectId, parentProjectId }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const h = ProjectHierarchy.parse({ id: ctx.genId(), parentProjectId, childProjectId });
       await db.transaction().execute(async (trx) => {
         await trx.deleteFrom("project_hierarchies").where("child_project_id", "=", childProjectId).execute();
@@ -154,7 +168,8 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return h;
     },
 
-    addProjectMember: async ({ projectId, userId, roleIds }) => {
+    addProjectMember: async ({ actorId, projectId, userId, roleIds }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const existing = await db.selectFrom("project_memberships").select("id").where("project_id", "=", projectId).where("user_id", "=", userId).executeTakeFirst();
       if (existing) throw new ConflictError(`User ${userId} is already a member of project ${projectId}`);
       const id = ctx.genId();
@@ -165,14 +180,16 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return ProjectMembership.parse({ id, projectId, userId, roleIds });
     },
 
-    updateProjectMember: async ({ projectId, userId, roleIds }) => {
+    updateProjectMember: async ({ actorId, projectId, userId, roleIds }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const row = await db.selectFrom("project_memberships").selectAll().where("project_id", "=", projectId).where("user_id", "=", userId).executeTakeFirst();
       if (!row) throw new NotFoundError("ProjectMembership", `${projectId}/${userId}`);
       await db.transaction().execute(async (trx) => writeRoles(trx as typeof db, row.id, roleIds));
       return ProjectMembership.parse({ id: row.id, projectId, userId, roleIds });
     },
 
-    removeProjectMember: async ({ projectId, userId }) => {
+    removeProjectMember: async ({ actorId, projectId, userId }) => {
+      await assertGlobalAdmin(ctx, actorId);
       const row = await db.selectFrom("project_memberships").select("id").where("project_id", "=", projectId).where("user_id", "=", userId).executeTakeFirst();
       if (!row) throw new NotFoundError("ProjectMembership", `${projectId}/${userId}`);
       await db.transaction().execute(async (trx) => {

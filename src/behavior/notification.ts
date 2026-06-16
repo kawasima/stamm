@@ -11,9 +11,11 @@ import { PaginatedResult } from "./common.js";
 // Notifications
 // ============================================================
 
-/** List notifications for a user */
+/** List notifications for a user. A non-admin actor may only target their own
+ *  recipientId; `actorId` is injected by the server, so it can't be spoofed. */
 export const ListNotifications = z.function()
   .args(z.object({
+    actorId: Id,
     recipientId: Id,
     projectId: Id.optional(),
     eventType: NotificationEventType.optional(),
@@ -22,9 +24,9 @@ export const ListNotifications = z.function()
   }))
   .returns(z.promise(PaginatedResult(Notification)));
 
-/** Get unread notification count for a user */
+/** Get unread notification count for a user (own recipientId, or admin). */
 export const GetUnreadNotificationCount = z.function()
-  .args(z.object({ recipientId: Id }))
+  .args(z.object({ actorId: Id, recipientId: Id }))
   .returns(z.promise(z.object({
     count: z.number().int(),
   })));

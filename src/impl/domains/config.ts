@@ -15,6 +15,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { assertGlobalAdmin } from "../permissions.js";
 
 interface Paginated<T> {
   items: T[];
@@ -33,6 +34,13 @@ interface CrudDef<S extends z.ZodTypeAny> {
   json?: string[];
   /** Whether the table has a project_id column (enables a projectId list filter). */
   projectScoped?: boolean;
+  /**
+   * Authorize a write (create/update/delete). Defaults to global-admin-only:
+   * config resources (statuses, roles, users, …) are administration, so a
+   * non-admin actor must be rejected before any row is touched. Reads (get/list)
+   * stay open so members can resolve statuses/labels/roles for normal work.
+   */
+  writeGuard?: (ctx: Ctx, args: Record<string, unknown>) => Promise<void>;
 }
 
 /**
@@ -46,8 +54,10 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   type R = z.infer<S>;
   const codec = makeCodec(def.schema, { json: def.json } as CodecOptions);
   const db = ctx.db as unknown as Kysely<Record<string, Record<string, unknown>>>;
+  const guardWrite = def.writeGuard ?? ((c, a) => assertGlobalAdmin(c, a.actorId as string));
 
   const create = async (args: Record<string, unknown>): Promise<R> => {
+    await guardWrite(ctx, args);
     const { actorId: _actor, ...fields } = args;
     const entity = def.schema.parse({ id: ctx.genId(), ...fields }) as R;
     await db.insertInto(def.table).values(codec.encode(entity)).execute();
@@ -62,6 +72,7 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   };
 
   const update = async (args: Record<string, unknown>): Promise<R> => {
+    await guardWrite(ctx, args);
     const id = args[def.idArg] as string;
     const row = await db.selectFrom(def.table).selectAll().where("id", "=", id).executeTakeFirst();
     if (!row) throw new NotFoundError(def.entityName, id);
@@ -76,6 +87,7 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   };
 
   const remove = async (args: Record<string, unknown>): Promise<void> => {
+    await guardWrite(ctx, args);
     const id = args[def.idArg] as string;
     const res = await db.deleteFrom(def.table).where("id", "=", id).executeTakeFirst();
     if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError(def.entityName, id);
@@ -115,7 +127,17 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
   const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType" });
   const category = makeCrud(ctx, { table: "categories", schema: Category, idArg: "categoryId", entityName: "Category", projectScoped: true });
   const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"] });
-  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User" });
+  // Users are global-admin-only to write, EXCEPT the very first user on an empty
+  // database: someone has to mint the bootstrap admin before any admin exists.
+  // Once any user exists this falls back to the admin check, so it can't be used
+  // to escalate later (update/delete also 404 on an empty DB, so the carve-out
+  // is harmless there).
+  const userGuard = async (c: Ctx, args: Record<string, unknown>): Promise<void> => {
+    const anyUser = await c.db.selectFrom("users").select("id").executeTakeFirst();
+    if (!anyUser) return;
+    await assertGlobalAdmin(c, args.actorId as string);
+  };
+  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard });
   const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup" });
 
   return {
