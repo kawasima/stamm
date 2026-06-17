@@ -93,6 +93,31 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "activity_list", description: "List activity-feed entries (newest first), filterable by project, user, action, target, or time range", contract: B.ListActivities, behavior: "listActivities", annotations: RO },
   { name: "activity_get", description: "Get a single activity entry by ID", contract: B.GetActivity, behavior: "getActivity", annotations: RO },
 
+  // --- Draft issues (board items not yet promoted to real issues) ---
+  { name: "draft_create", description: "Create a draft issue on a project board", contract: B.CreateDraftIssue, behavior: "createDraftIssue" },
+  { name: "draft_get", description: "Get a draft issue by ID", contract: B.GetDraftIssue, behavior: "getDraftIssue", annotations: RO },
+  { name: "draft_update", description: "Update a draft issue", contract: B.UpdateDraftIssue, behavior: "updateDraftIssue", annotations: IDEM },
+  { name: "draft_delete", description: "Delete a draft issue", contract: B.DeleteDraftIssue, behavior: "deleteDraftIssue", annotations: DESTRUCTIVE },
+  { name: "draft_list", description: "List draft issues in a project", contract: B.ListDraftIssues, behavior: "listDraftIssues", annotations: RO },
+  { name: "draft_convert", description: "Promote a draft into a real issue (records the conversion)", contract: B.ConvertDraftToIssue, behavior: "convertDraftToIssue" },
+
+  // --- Issue templates ---
+  { name: "template_create", description: "Create an issue template", contract: B.CreateIssueTemplate, behavior: "createIssueTemplate" },
+  { name: "template_get", description: "Get an issue template by ID", contract: B.GetIssueTemplate, behavior: "getIssueTemplate", annotations: RO },
+  { name: "template_update", description: "Update an issue template", contract: B.UpdateIssueTemplate, behavior: "updateIssueTemplate", annotations: IDEM },
+  { name: "template_delete", description: "Delete an issue template", contract: B.DeleteIssueTemplate, behavior: "deleteIssueTemplate", annotations: DESTRUCTIVE },
+  { name: "template_list", description: "List issue templates in a project", contract: B.ListIssueTemplates, behavior: "listIssueTemplates", annotations: RO },
+  { name: "template_instantiate", description: "Build CreateIssue arguments from a template (does not persist)", contract: B.InstantiateTemplate, behavior: "instantiateTemplate", annotations: RO },
+
+  // --- Saved views & board ordering ---
+  { name: "view_create", description: "Create a saved view / query", contract: B.CreateProjectView, behavior: "createProjectView" },
+  { name: "view_get", description: "Get a saved view by ID", contract: B.GetProjectView, behavior: "getProjectView", annotations: RO },
+  { name: "view_update", description: "Update a saved view", contract: B.UpdateProjectView, behavior: "updateProjectView", annotations: IDEM },
+  { name: "view_delete", description: "Delete a saved view", contract: B.DeleteProjectView, behavior: "deleteProjectView", annotations: DESTRUCTIVE },
+  { name: "view_list", description: "List saved views in a project (shared plus the viewer's own private ones)", contract: B.ListProjectViews, behavior: "listProjectViews", annotations: RO },
+  { name: "board_move", description: "Reorder a card within a board view (provide exactly one of beforeIssueId / afterIssueId / position)", contract: B.MoveIssueOnBoard, behavior: "moveIssueOnBoard", annotations: IDEM },
+  { name: "board_positions", description: "List card positions for a board view", contract: B.ListBoardPositions, behavior: "listBoardPositions", annotations: RO },
+
   // --- Notifications ---
   { name: "notification_list", description: "List notifications for a user", contract: B.ListNotifications, behavior: "listNotifications", annotations: RO },
   { name: "notification_unread_count", description: "Get the unread notification count for a user", contract: B.GetUnreadNotificationCount, behavior: "getUnreadNotificationCount", annotations: RO },

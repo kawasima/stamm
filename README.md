@@ -38,6 +38,14 @@ What the tools cover today (one MCP tool per operation unless noted):
   membership with roles.
 - **Milestones** — CRUD; close / reopen / lock; progress.
 - **Iterations** (sprints) — CRUD; progress.
+- **Draft issues** — lightweight board items not yet promoted: CRUD, plus convert
+  a draft into a real issue (the conversion is recorded on the timeline).
+- **Issue templates** — reusable pre-fill content (title prefix, description,
+  default priority / labels / assignees / custom fields): CRUD, plus instantiate
+  into prepared `issue_create` arguments.
+- **Saved views** — named filter + grouping + sort + columns + layout bundles,
+  private or shared: CRUD, plus manual board-card ordering (reorder by
+  before / after / position).
 - **Time tracking** — log / read / update / delete entries; list; summary.
 - **Notifications** — list; unread count; mark one or all read.
 - **Activity feed** — the append-only timeline every mutation writes to; list it
@@ -53,8 +61,8 @@ What the tools cover today (one MCP tool per operation unless noted):
   HTTP with per-user EdDSA JWT auth; admin-managed signing keys (issue / revoke
   / list).
 
-Modeled in `schema/` but not yet exposed as operations: wikis, saved views,
-automations, templates, drafts, and webhooks.
+Modeled in `schema/` but not yet exposed as operations: wikis, automations, and
+webhooks.
 
 ## Layers
 

@@ -103,6 +103,31 @@ export interface Behaviors {
   listActivities: Fn<typeof B.ListActivities>;
   getActivity: Fn<typeof B.GetActivity>;
 
+  // --- Draft issues ---
+  createDraftIssue: Fn<typeof B.CreateDraftIssue>;
+  getDraftIssue: Fn<typeof B.GetDraftIssue>;
+  updateDraftIssue: Fn<typeof B.UpdateDraftIssue>;
+  deleteDraftIssue: Fn<typeof B.DeleteDraftIssue>;
+  listDraftIssues: Fn<typeof B.ListDraftIssues>;
+  convertDraftToIssue: Fn<typeof B.ConvertDraftToIssue>;
+
+  // --- Issue templates ---
+  createIssueTemplate: Fn<typeof B.CreateIssueTemplate>;
+  getIssueTemplate: Fn<typeof B.GetIssueTemplate>;
+  updateIssueTemplate: Fn<typeof B.UpdateIssueTemplate>;
+  deleteIssueTemplate: Fn<typeof B.DeleteIssueTemplate>;
+  listIssueTemplates: Fn<typeof B.ListIssueTemplates>;
+  instantiateTemplate: Fn<typeof B.InstantiateTemplate>;
+
+  // --- Saved views & board ordering ---
+  createProjectView: Fn<typeof B.CreateProjectView>;
+  getProjectView: Fn<typeof B.GetProjectView>;
+  updateProjectView: Fn<typeof B.UpdateProjectView>;
+  deleteProjectView: Fn<typeof B.DeleteProjectView>;
+  listProjectViews: Fn<typeof B.ListProjectViews>;
+  moveIssueOnBoard: Fn<typeof B.MoveIssueOnBoard>;
+  listBoardPositions: Fn<typeof B.ListBoardPositions>;
+
   // --- Notifications ---
   listNotifications: Fn<typeof B.ListNotifications>;
   getUnreadNotificationCount: Fn<typeof B.GetUnreadNotificationCount>;

@@ -307,4 +307,62 @@ export interface Database {
   notifications: NotificationsTable;
   notification_reads: NotificationReadsTable;
   activity_entries: ActivityEntriesTable;
+  draft_issues: DraftIssuesTable;
+  draft_conversions: DraftConversionsTable;
+  issue_templates: IssueTemplatesTable;
+  project_views: ProjectViewsTable;
+  issue_board_positions: IssueBoardPositionsTable;
+}
+
+export interface DraftIssuesTable {
+  id: string;
+  project_id: string;
+  title: string;
+  body: string | null;
+  author_id: string;
+  sort_order: number;
+}
+
+export interface DraftConversionsTable {
+  id: string;
+  draft_id: string;
+  issue_id: string;
+  user_id: string;
+  occurred_at: string;
+}
+
+export interface IssueTemplatesTable {
+  id: string;
+  project_id: string;
+  name: string;
+  issue_type_id: string | null;
+  title_prefix: string | null;
+  description_template: string;
+  default_priority_id: string | null;
+  default_label_ids: string | null; // JSON text: Id[]
+  default_assignee_ids: string | null; // JSON text: Id[]
+  default_custom_fields: string | null; // JSON text: CustomFieldValue[]
+  sort_order: number;
+}
+
+export interface ProjectViewsTable {
+  id: string;
+  project_id: string;
+  owner_id: string;
+  name: string;
+  layout: string;
+  filter: string; // JSON text: IssueFilter
+  group_by: string | null;
+  sort_by: string | null;
+  sort_direction: string;
+  columns: string; // JSON text: string[]
+  visibility: string;
+  sort_order: number;
+}
+
+export interface IssueBoardPositionsTable {
+  id: string;
+  view_id: string;
+  issue_id: string;
+  position: number;
 }

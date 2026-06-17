@@ -6,6 +6,7 @@ import * as planning0003 from "./migrations/0003_planning.js";
 import * as time0004 from "./migrations/0004_time.js";
 import * as notifications0005 from "./migrations/0005_notifications.js";
 import * as credentials0006 from "./migrations/0006_user_credentials.js";
+import * as workspace0007 from "./migrations/0007_workspace.js";
 
 /** All migrations in order, keyed by a sortable name. */
 const MIGRATIONS: Record<string, Migration> = {
@@ -15,6 +16,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "0004_time": time0004,
   "0005_notifications": notifications0005,
   "0006_user_credentials": credentials0006,
+  "0007_workspace": workspace0007,
 };
 
 class StaticMigrationProvider implements MigrationProvider {
