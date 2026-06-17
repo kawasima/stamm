@@ -59,8 +59,12 @@ What the tools cover today (one MCP tool per operation unless noted):
   one entry by id. It is also the source of each entity's created / updated
   timestamps.
 - **Configuration** (admin, via `admin_*`) — statuses, priorities, labels, issue
-  types, categories, roles, users, user groups; workflow transitions; default
-  status per project/type.
+  types, categories, roles, users, user groups, custom field definitions;
+  workflow transitions; default status per project/type.
+- **Custom fields** — admin-defined field definitions (type, constraints,
+  possible values, scope, required). Values set on an issue are validated against
+  their definition at write time — Schema on Write, see
+  [ADR-0003](docs/adr/0003-custom-fields-are-schema-on-write-eav.md).
 - **Access control** — role-based permissions per project, with issue-visibility
   scoping (all vs own/assigned); account status (active / inactive); groups.
 - **Authentication & transport** — local stdio (single pinned user) and remote

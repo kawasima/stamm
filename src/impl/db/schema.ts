@@ -184,6 +184,21 @@ export interface IssueRelationsTable {
   delay: number | null;
 }
 
+export interface CustomFieldDefinitionsTable {
+  id: string;
+  name: string;
+  field_type: string;
+  description: string | null;
+  is_required: number; // 0/1
+  default_value: string | null;
+  possible_values: string | null; // JSON text: string[]
+  constraints: string; // JSON text: CustomFieldConstraints
+  scope: string; // JSON text: CustomFieldScope
+  sort_order: number;
+  is_filter: number; // 0/1
+  is_searchable: number; // 0/1
+}
+
 export interface MilestonesTable {
   id: string;
   project_id: string;
@@ -301,6 +316,7 @@ export interface Database {
   issue_relations: IssueRelationsTable;
   comments: CommentsTable;
   attachments: AttachmentsTable;
+  custom_field_definitions: CustomFieldDefinitionsTable;
   milestones: MilestonesTable;
   iterations: IterationsTable;
   time_entries: TimeEntriesTable;

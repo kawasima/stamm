@@ -27,6 +27,18 @@ export class ConflictError extends DomainError {
 }
 
 /**
+ * A write was rejected because its value violates a domain rule (e.g. a custom
+ * field value that does not match its definition's type, constraints, or scope).
+ * Distinct from NotFound/Conflict: the request is well-formed but invalid.
+ */
+export class ValidationError extends DomainError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+/**
  * Authentication failure at the transport boundary (e.g. a missing, malformed,
  * expired, or unverifiable JWT). The HTTP layer maps this to a 401. It extends
  * DomainError so a stray throw inside a behavior still surfaces as an MCP error.

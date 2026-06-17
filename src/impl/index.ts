@@ -3,6 +3,7 @@ import type { Behaviors } from "../mcp/behaviors.js";
 import type { Database } from "./db/schema.js";
 import { makeCtx, type CtxOptions } from "./ctx.js";
 import { configBehaviors } from "./domains/config.js";
+import { customFieldBehaviors } from "./domains/custom-field.js";
 import { userExtraBehaviors } from "./domains/user-extras.js";
 import { credentialBehaviors } from "./domains/credentials.js";
 import { projectBehaviors } from "./domains/project.js";
@@ -34,6 +35,7 @@ export function createSqlBehaviors(db: Kysely<Database>, opts: CtxOptions = {}):
   const ctx = makeCtx(db, opts);
   return {
     ...configBehaviors(ctx),
+    ...customFieldBehaviors(ctx),
     ...userExtraBehaviors(ctx),
     ...credentialBehaviors(ctx),
     ...projectBehaviors(ctx),

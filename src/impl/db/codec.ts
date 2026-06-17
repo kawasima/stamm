@@ -15,6 +15,8 @@ export interface RowCodec<T> {
 export interface CodecOptions {
   /** Domain field names (camelCase) persisted as JSON text columns. */
   json?: string[];
+  /** Domain field names (camelCase) persisted as 0/1 integers (SQLite has no boolean). */
+  bool?: string[];
 }
 
 const toSnake = (s: string): string => s.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
@@ -25,6 +27,7 @@ export function makeCodec<S extends z.ZodTypeAny>(
   opts: CodecOptions = {},
 ): RowCodec<z.infer<S>> {
   const jsonFields = new Set(opts.json ?? []);
+  const boolFields = new Set(opts.bool ?? []);
 
   return {
     decode(row) {
@@ -32,7 +35,9 @@ export function makeCodec<S extends z.ZodTypeAny>(
       for (const [col, raw] of Object.entries(row)) {
         if (raw === null || raw === undefined) continue; // SQL NULL -> absent (optional)
         const key = toCamel(col);
-        obj[key] = jsonFields.has(key) && typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (jsonFields.has(key) && typeof raw === "string") obj[key] = JSON.parse(raw);
+        else if (boolFields.has(key)) obj[key] = !!raw; // 0/1 -> boolean
+        else obj[key] = raw;
       }
       return schema.parse(obj);
     },
@@ -42,7 +47,9 @@ export function makeCodec<S extends z.ZodTypeAny>(
       const row: Record<string, unknown> = {};
       for (const [key, v] of Object.entries(parsed)) {
         if (v === undefined) continue;
-        row[toSnake(key)] = jsonFields.has(key) ? JSON.stringify(v) : v;
+        if (jsonFields.has(key)) row[toSnake(key)] = JSON.stringify(v);
+        else if (boolFields.has(key)) row[toSnake(key)] = v ? 1 : 0;
+        else row[toSnake(key)] = v;
       }
       return row;
     },

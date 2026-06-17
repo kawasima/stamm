@@ -202,4 +202,10 @@ export interface Behaviors {
   updateUserGroup: Fn<typeof B.UpdateUserGroup>;
   deleteUserGroup: Fn<typeof B.DeleteUserGroup>;
   listUserGroups: Fn<typeof B.ListUserGroups>;
+
+  createCustomFieldDefinition: Fn<typeof B.CreateCustomFieldDefinition>;
+  getCustomFieldDefinition: Fn<typeof B.GetCustomFieldDefinition>;
+  updateCustomFieldDefinition: Fn<typeof B.UpdateCustomFieldDefinition>;
+  deleteCustomFieldDefinition: Fn<typeof B.DeleteCustomFieldDefinition>;
+  listCustomFieldDefinitions: Fn<typeof B.ListCustomFieldDefinitions>;
 }

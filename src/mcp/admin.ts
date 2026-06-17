@@ -24,6 +24,7 @@ const CREATE: ResourceMap = {
   role: { contract: B.CreateRole, behavior: "createRole" },
   user: { contract: B.CreateUser, behavior: "createUser" },
   group: { contract: B.CreateUserGroup, behavior: "createUserGroup" },
+  custom_field: { contract: B.CreateCustomFieldDefinition, behavior: "createCustomFieldDefinition" },
 };
 
 const GET: ResourceMap = {
@@ -35,6 +36,7 @@ const GET: ResourceMap = {
   role: { contract: B.GetRole, behavior: "getRole" },
   user: { contract: B.GetUser, behavior: "getUser" },
   group: { contract: B.GetUserGroup, behavior: "getUserGroup" },
+  custom_field: { contract: B.GetCustomFieldDefinition, behavior: "getCustomFieldDefinition" },
 };
 
 const UPDATE: ResourceMap = {
@@ -46,6 +48,7 @@ const UPDATE: ResourceMap = {
   role: { contract: B.UpdateRole, behavior: "updateRole" },
   user: { contract: B.UpdateUser, behavior: "updateUser" },
   group: { contract: B.UpdateUserGroup, behavior: "updateUserGroup" },
+  custom_field: { contract: B.UpdateCustomFieldDefinition, behavior: "updateCustomFieldDefinition" },
 };
 
 const DELETE: ResourceMap = {
@@ -57,6 +60,7 @@ const DELETE: ResourceMap = {
   role: { contract: B.DeleteRole, behavior: "deleteRole" },
   user: { contract: B.DeleteUser, behavior: "deleteUser" },
   group: { contract: B.DeleteUserGroup, behavior: "deleteUserGroup" },
+  custom_field: { contract: B.DeleteCustomFieldDefinition, behavior: "deleteCustomFieldDefinition" },
 };
 
 const LIST: ResourceMap = {
@@ -68,9 +72,10 @@ const LIST: ResourceMap = {
   role: { contract: B.ListRoles, behavior: "listRoles" },
   user: { contract: B.ListUsers, behavior: "listUsers" },
   group: { contract: B.ListUserGroups, behavior: "listUserGroups" },
+  custom_field: { contract: B.ListCustomFieldDefinitions, behavior: "listCustomFieldDefinitions" },
 };
 
-const RESOURCE_LIST = "status, priority, label, issue_type, category, role, user, group";
+const RESOURCE_LIST = "status, priority, label, issue_type, category, role, user, group, custom_field";
 
 function unionSchema(map: ResourceMap, pinnedActor: boolean) {
   const variants = Object.keys(map).map((resource) => {

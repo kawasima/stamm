@@ -24,6 +24,7 @@ import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, rolesOf } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
+import { validateCustomFields } from "./custom-field.js";
 
 type IssueMethods =
   | "createIssue" | "getIssue" | "getIssueByKey" | "getIssueDetail"
@@ -138,6 +139,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       await assertCanWrite(ctx, args.projectId, args.actorId, "issue.create");
       const proj = await db.selectFrom("projects").select("identifier").where("id", "=", args.projectId).executeTakeFirst();
       if (!proj) throw new NotFoundError("Project", args.projectId);
+      await validateCustomFields(ctx, { projectId: args.projectId, issueTypeId: args.issueTypeId, values: args.customFields });
       const statusId = args.statusId ?? (await resolveDefaultStatus(ctx, args.projectId, args.issueTypeId)).id;
 
       let issue!: IssueT;
@@ -225,6 +227,13 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     updateIssue: async (args) => {
       const issue = await loadIssue(args.issueId);
       await assertCanWrite(ctx, issue.projectId, args.actorId, "issue.update");
+      if (args.customFields !== undefined) {
+        await validateCustomFields(ctx, {
+          projectId: issue.projectId,
+          issueTypeId: args.issueTypeId ?? issue.issueTypeId,
+          values: args.customFields,
+        });
+      }
       const patch: Partial<IssueT> = {};
       for (const f of ["issueTypeId", "priorityId", "subject", "description", "visibility", "customFields"] as const) {
         if (args[f] !== undefined) (patch as Record<string, unknown>)[f] = args[f];
