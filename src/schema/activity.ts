@@ -18,7 +18,6 @@ export const ActivityAction = z.enum([
   "progress_updated",
   "closed",
   "reopened",
-  "automation_executed",
   "draft_converted",
 ]);
 

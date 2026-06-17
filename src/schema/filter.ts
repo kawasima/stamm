@@ -8,7 +8,7 @@ import { StatusCategory } from "./status.js";
 //
 // Lives in the schema layer so it can be reused both by query behaviors
 // (ListIssues) and by persisted entities that embed a filter, such as
-// ProjectView (saved views/queries) and AutomationRule (conditions).
+// ProjectView (saved views/queries).
 // ============================================================
 
 export const IssueFilter = z.object({

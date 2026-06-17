@@ -20,9 +20,6 @@ export const Permission = z.enum([
   "comment.delete",
   "attachment.create",
   "attachment.delete",
-  "wiki.create",
-  "wiki.update",
-  "wiki.delete",
   "time_entry.create",
   "time_entry.update",
   "time_entry.delete",
@@ -30,11 +27,9 @@ export const Permission = z.enum([
   "iteration.manage",
   "custom_field.manage",
   "view.manage",
-  "automation.manage",
   "template.manage",
   "member.manage",
   "role.manage",
-  "webhook.manage",
 ]);
 
 /** How much of a project's issues a role can see (Redmine-style scoping) */

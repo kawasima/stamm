@@ -67,8 +67,8 @@ What the tools cover today (one MCP tool per operation unless noted):
   HTTP with per-user EdDSA JWT auth; admin-managed signing keys (issue / revoke
   / list).
 
-Modeled in `schema/` but not yet exposed as operations: wikis, automations, and
-webhooks.
+Wikis, automations, and webhooks are intentionally **out of scope** — see
+[ADR-0002](docs/adr/0002-stamm-is-an-issue-tracking-system-of-record.md).
 
 ## Metrics
 

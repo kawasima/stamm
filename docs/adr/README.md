@@ -8,3 +8,4 @@ rather than editing it.
 | # | Title | Status |
 | --- | --- | --- |
 | [0001](0001-metrics-are-a-consumer-concern.md) | Metrics are a consumer concern; stamm exposes primary observations | Accepted |
+| [0002](0002-stamm-is-an-issue-tracking-system-of-record.md) | stamm is an issue-tracking system of record; wiki, automation, and webhooks are out of scope | Accepted |

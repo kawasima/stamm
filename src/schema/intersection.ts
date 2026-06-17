@@ -138,13 +138,6 @@ export const CategoryDefaultAssignee = Resource.extend({
   assigneeId: Id,
 });
 
-// --- Wiki start page ---
-
-export const WikiStartPage = Resource.extend({
-  wikiId: Id,
-  wikiPageId: Id,
-});
-
 export type ProjectMemberJoin = z.infer<typeof ProjectMemberJoin>;
 export type ProjectMembership = z.infer<typeof ProjectMembership>;
 export type ProjectMemberLeave = z.infer<typeof ProjectMemberLeave>;
@@ -166,4 +159,3 @@ export type Unwatch = z.infer<typeof Unwatch>;
 export type ParentSetting = z.infer<typeof ParentSetting>;
 export type IssueParent = z.infer<typeof IssueParent>;
 export type CategoryDefaultAssignee = z.infer<typeof CategoryDefaultAssignee>;
-export type WikiStartPage = z.infer<typeof WikiStartPage>;
