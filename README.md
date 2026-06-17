@@ -82,7 +82,10 @@ does not compute the metrics themselves — those are a consumer concern. The
 reasoning is recorded in [ADR-0001](docs/adr/0001-metrics-are-a-consumer-concern.md),
 and [docs/metrics-cookbook.md](docs/metrics-cookbook.md) shows how to derive
 cycle time, throughput, due-date slippage, and more from the read tools (with a
-runnable example in [`sim/metrics.mjs`](sim/metrics.mjs)).
+runnable example in [`sim/metrics.mjs`](sim/metrics.mjs)). For a UI,
+[docs/showcase-metrics.md](docs/showcase-metrics.md) is a paste-into-Claude-Code
+prompt that builds a flow-metrics dashboard (CFD, cycle time, throughput,
+slippage) computing everything client-side from those observations.
 
 ## Layers
 
