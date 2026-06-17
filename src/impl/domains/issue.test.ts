@@ -84,7 +84,7 @@ describe("issue domain — create & reads", () => {
       assigneeIds: [w.alice.id], dueDate: "2026-07-01", estimatedHours: 4,
     });
     const detail = await w.issues.getIssueDetail({ actorId: w.alice.id, issueId: issue.id });
-    expect(detail.assignees.map((a) => a.assigneeId)).toEqual([w.alice.id]);
+    expect(detail.assignees.map((a) => a.id)).toEqual([w.alice.id]);
     expect(detail.schedule?.dueDate).toBe("2026-07-01");
     expect(detail.estimation?.estimatedHours).toBe(4);
     expect(detail.labels).toEqual([]);

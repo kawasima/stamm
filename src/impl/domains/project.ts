@@ -79,9 +79,10 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
     },
 
     getProjectByIdentifier: async ({ identifier }) => {
+      // A lookup by natural key: absence is an ordinary outcome (it enables
+      // get-or-create), not an error. Return null rather than throwing.
       const row = await db.selectFrom("projects").selectAll().where("identifier", "=", identifier).executeTakeFirst();
-      if (!row) throw new NotFoundError("Project", identifier);
-      return projectCodec.decode(row);
+      return row ? projectCodec.decode(row) : null;
     },
 
     updateProject: async ({ actorId, projectId, name, description }) => {

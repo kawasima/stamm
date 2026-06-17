@@ -87,16 +87,29 @@ describe("MCP end-to-end over a real SQL backend", () => {
     const client = await connect(w.b);
     const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
     const issue = (await client.callTool({ name: "issue_create", arguments: { ...base, subject: "S" } })).structuredContent as { id: string };
+    const label = await w.b.createLabel({ actorId: w.admin.id, projectId: w.proj.id, name: "bug", color: "#ff0000" });
 
     const updated = await client.callTool({
       name: "issue_update",
-      arguments: { actorId: w.alice.id, issueId: issue.id, subject: "Renamed", assigneeIds: [w.bob.id], labelIds: ["l1"] },
+      arguments: { actorId: w.alice.id, issueId: issue.id, subject: "Renamed", assigneeIds: [w.bob.id], labelIds: [label.id] },
     });
     expect(updated.isError).toBeFalsy();
-    const detail = updated.structuredContent as { subject: string; assignees: { assigneeId: string }[]; labels: { labelId: string }[] };
+    const detail = updated.structuredContent as { subject: string; assignees: { id: string; displayName: string }[]; labels: { id: string; name: string }[] };
     expect(detail.subject).toBe("Renamed");
-    expect(detail.assignees.map((a) => a.assigneeId)).toEqual([w.bob.id]);
-    expect(detail.labels.map((l) => l.labelId)).toEqual(["l1"]);
+    // satellites come back hydrated: the assignee user and the label resource
+    expect(detail.assignees.map((a) => a.id)).toEqual([w.bob.id]);
+    expect(detail.labels.map((l) => l.name)).toEqual(["bug"]);
+  });
+
+  it("project_get_by_identifier reports a miss as a non-error null, and still returns the project when found", async () => {
+    const w = await seededBehaviors();
+    const client = await connect(w.b);
+    const miss = await client.callTool({ name: "project_get_by_identifier", arguments: { identifier: "ghost" } });
+    expect(miss.isError).toBeFalsy();
+    expect(miss.structuredContent).toBeUndefined();
+    const hit = await client.callTool({ name: "project_get_by_identifier", arguments: { identifier: "proj" } });
+    expect(hit.isError).toBeFalsy();
+    expect((hit.structuredContent as { identifier: string }).identifier).toBe("proj");
   });
 
   it("pins identity: actorId is hidden from schemas and injected from the pinned actor", async () => {

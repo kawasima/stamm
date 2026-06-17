@@ -6,6 +6,7 @@ import { configBehaviors } from "./config.js";
 import { projectBehaviors } from "./project.js";
 import { issueBehaviors } from "./issue.js";
 import { issueSatelliteBehaviors } from "./issue-satellites.js";
+import { milestoneBehaviors } from "./milestone.js";
 
 async function world() {
   const db = await createTestDb();
@@ -14,6 +15,7 @@ async function world() {
   const project = projectBehaviors(ctx);
   const issues = issueBehaviors(ctx);
   const sat = issueSatelliteBehaviors(ctx);
+  const milestones = milestoneBehaviors(ctx);
 
   const admin = await config.createUser({ actorId: "boot", login: "admin", email: "a@x.io", displayName: "Admin", kind: "admin" });
   const role = await config.createRole({ actorId: admin.id, name: "Dev", permissions: ["issue.create", "issue.update", "issue.assign"], issuesVisibility: "all" });
@@ -24,7 +26,7 @@ async function world() {
   const alice = await config.createUser({ actorId: admin.id, login: "alice", email: "al@x.io", displayName: "Alice" });
   await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: alice.id, roleIds: [role.id] });
   const issue = await issues.createIssue({ actorId: alice.id, projectId: proj.id, issueTypeId: type.id, priorityId: priority.id, subject: "I" });
-  return { db, config, project, issues, sat, admin, role, priority, type, proj, alice, issue };
+  return { db, config, project, issues, sat, milestones, admin, role, priority, type, proj, alice, issue };
 }
 
 describe("issue satellites", () => {
@@ -34,17 +36,19 @@ describe("issue satellites", () => {
     const r2 = await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.admin.id] });
     expect(r2.assignees.map((a) => a.assigneeId)).toEqual([w.admin.id]);
     const detail = await w.issues.getIssueDetail({ actorId: w.alice.id, issueId: w.issue.id });
-    expect(detail.assignees.map((a) => a.assigneeId)).toEqual([w.admin.id]);
+    expect(detail.assignees.map((a) => a.id)).toEqual([w.admin.id]);
     await w.db.destroy();
   });
 
   it("upserts 0..1 satellites (milestone replaced on re-set)", async () => {
     const w = await world();
-    await w.sat.setIssueMilestone({ actorId: w.alice.id, issueId: w.issue.id, milestoneId: "m1" });
-    const r = await w.sat.setIssueMilestone({ actorId: w.alice.id, issueId: w.issue.id, milestoneId: "m2" });
-    expect(r.milestoneId).toBe("m2");
+    const m1 = await w.milestones.createMilestone({ actorId: w.admin.id, projectId: w.proj.id, name: "m1" });
+    const m2 = await w.milestones.createMilestone({ actorId: w.admin.id, projectId: w.proj.id, name: "m2" });
+    await w.sat.setIssueMilestone({ actorId: w.alice.id, issueId: w.issue.id, milestoneId: m1.id });
+    const r = await w.sat.setIssueMilestone({ actorId: w.alice.id, issueId: w.issue.id, milestoneId: m2.id });
+    expect(r.milestoneId).toBe(m2.id);
     const detail = await w.issues.getIssueDetail({ actorId: w.alice.id, issueId: w.issue.id });
-    expect(detail.milestone?.milestoneId).toBe("m2");
+    expect(detail.milestone?.id).toBe(m2.id);
     await w.db.destroy();
   });
 
@@ -67,6 +71,24 @@ describe("issue satellites", () => {
     await w.sat.deleteIssueRelation({ actorId: w.alice.id, relationId: rel.id });
     expect((await w.sat.listIssueRelations({ issueId: w.issue.id, pagination: { limit: 20 } })).items).toHaveLength(0);
     await expect(w.sat.deleteIssueRelation({ actorId: w.alice.id, relationId: rel.id })).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("getIssueDetail hydrates satellites into their target resources", async () => {
+    const w = await world();
+    const label = await w.config.createLabel({ actorId: w.admin.id, projectId: w.proj.id, name: "bug", color: "#ff0000" });
+    const ms = await w.milestones.createMilestone({ actorId: w.admin.id, projectId: w.proj.id, name: "v1" });
+    await w.sat.setIssueLabels({ actorId: w.alice.id, issueId: w.issue.id, labelIds: [label.id] });
+    await w.sat.setIssueMilestone({ actorId: w.alice.id, issueId: w.issue.id, milestoneId: ms.id });
+    await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.alice.id] });
+
+    const detail = await w.issues.getIssueDetail({ actorId: w.alice.id, issueId: w.issue.id });
+    // labels carry the Label resource (name + color), not the junction row
+    expect(detail.labels).toEqual([expect.objectContaining({ id: label.id, name: "bug", color: "#ff0000" })]);
+    // milestone carries the Milestone resource (name), not just milestoneId
+    expect(detail.milestone).toEqual(expect.objectContaining({ id: ms.id, name: "v1" }));
+    // assignees carry the User resource (displayName), not just assigneeId
+    expect(detail.assignees).toEqual([expect.objectContaining({ id: w.alice.id, displayName: "Alice" })]);
     await w.db.destroy();
   });
 

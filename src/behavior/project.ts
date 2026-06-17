@@ -34,7 +34,8 @@ export const GetProject = z.function()
 /** Get a project by its slug identifier */
 export const GetProjectByIdentifier = z.function()
   .args(z.object({ identifier: Slug }))
-  .returns(z.promise(Project));
+  // Natural-key lookup: null when no project has that identifier (not an error).
+  .returns(z.promise(Project.nullable()));
 
 /** Update a project */
 export const UpdateProject = z.function()

@@ -12,6 +12,11 @@ import {
   IssueProgress,
   IssueIteration,
   IssueRelation,
+  User,
+  Label,
+  Category,
+  Milestone,
+  Iteration,
 } from "../../schema/index.js";
 import { IssueStatusChange, IssueScheduleChange, IssueEstimationChange } from "../../schema/index.js";
 import type { Issue as IssueT } from "../../schema/index.js";
@@ -51,6 +56,12 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
   const statusChangeCodec = makeCodec(IssueStatusChange);
   const scheduleChangeCodec = makeCodec(IssueScheduleChange);
   const estimationChangeCodec = makeCodec(IssueEstimationChange);
+  // Codecs for the resources a detail view hydrates its satellites into.
+  const userCodec = makeCodec(User);
+  const labelResCodec = makeCodec(Label);
+  const categoryResCodec = makeCodec(Category);
+  const milestoneResCodec = makeCodec(Milestone);
+  const iterationResCodec = makeCodec(Iteration);
 
   const loadIssue = async (issueId: string): Promise<IssueT> => {
     const row = await db.selectFrom("issues").selectAll().where("id", "=", issueId).executeTakeFirst();
@@ -106,6 +117,33 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
   };
   const satOne = async <T>(table: string, codec: { decode: (r: Record<string, unknown>) => T }, issueId: string, idCol = "issue_id"): Promise<T | undefined> => {
     const row = await adb.selectFrom(table).selectAll().where(idCol, "=", issueId).executeTakeFirst();
+    return row ? codec.decode(row as Record<string, unknown>) : undefined;
+  };
+
+  // Hydrate a satellite into its target resource: join the junction table to the
+  // target on the junction's FK, select only the target's columns, and decode
+  // into the target resource. A junction pointing at a since-deleted target
+  // simply drops out (inner join), so the detail omits it rather than erroring.
+  const hydrateMany = async <T>(
+    junction: string, target: string, fk: string,
+    codec: { decode: (r: Record<string, unknown>) => T }, issueId: string,
+  ): Promise<T[]> => {
+    const rows = await adb.selectFrom(junction)
+      .innerJoin(target, `${target}.id`, `${junction}.${fk}`)
+      .where(`${junction}.issue_id`, "=", issueId)
+      .selectAll(target)
+      .execute();
+    return rows.map((r: Record<string, unknown>) => codec.decode(r));
+  };
+  const hydrateOne = async <T>(
+    junction: string, target: string, fk: string,
+    codec: { decode: (r: Record<string, unknown>) => T }, issueId: string, issueCol = "issue_id",
+  ): Promise<T | undefined> => {
+    const row = await adb.selectFrom(junction)
+      .innerJoin(target, `${target}.id`, `${junction}.${fk}`)
+      .where(`${junction}.${issueCol}`, "=", issueId)
+      .selectAll(target)
+      .executeTakeFirst();
     return row ? codec.decode(row as Record<string, unknown>) : undefined;
   };
 
@@ -183,14 +221,14 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const issue = await seenOrNotFound(actorId, await loadIssue(issueId));
       const [assignees, labels, watchers, relations, category, milestone, iteration, parent, schedule, estimation, progress] =
         await Promise.all([
-          satMany("issue_assignees", assigneeCodec, issueId),
-          satMany("issue_labels", labelCodec, issueId),
-          satMany("issue_watchers", watcherCodec, issueId),
+          hydrateMany("issue_assignees", "users", "assignee_id", userCodec, issueId),
+          hydrateMany("issue_labels", "labels", "label_id", labelResCodec, issueId),
+          hydrateMany("issue_watchers", "users", "user_id", userCodec, issueId),
           satMany("issue_relations", relationCodec, issueId),
-          satOne("issue_categories", categoryCodec, issueId),
-          satOne("issue_milestones", milestoneCodec, issueId),
-          satOne("issue_iterations", iterationCodec, issueId),
-          satOne("issue_parents", parentCodec, issueId, "child_issue_id"),
+          hydrateOne("issue_categories", "categories", "category_id", categoryResCodec, issueId),
+          hydrateOne("issue_milestones", "milestones", "milestone_id", milestoneResCodec, issueId),
+          hydrateOne("issue_iterations", "iterations", "iteration_id", iterationResCodec, issueId),
+          hydrateOne("issue_parents", "issues", "parent_issue_id", issueCodec, issueId, "child_issue_id"),
           satOne("issue_schedules", scheduleCodec, issueId),
           satOne("issue_estimations", estimationCodec, issueId),
           satOne("issue_progress", progressCodec, issueId),

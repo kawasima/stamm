@@ -18,8 +18,12 @@ import {
   IssueParent,
   IssueWatcher,
 } from "./intersection.js";
-import { IssueIteration } from "./iteration.js";
+import { Iteration, IssueIteration } from "./iteration.js";
 import { IssueRelation } from "./issue-relation.js";
+import { Label } from "./label.js";
+import { User } from "./user.js";
+import { Category } from "./category.js";
+import { Milestone } from "./milestone.js";
 
 // ============================================================
 // Issue - Long-Term Event
@@ -122,15 +126,19 @@ export const IssueProgress = Resource.extend({
  * empty); 0..1 satellites are optional. Used by GetIssueDetail.
  */
 export const IssueDetail = Issue.extend({
-  assignees: z.array(IssueAssignee), // 1:N
-  labels: z.array(IssueLabel), // 1:N
-  watchers: z.array(IssueWatcher), // 1:N
-  relations: z.array(IssueRelation), // 1:N (bounded by convention — see ListIssues)
-  category: IssueCategory.optional(), // 0..1
-  milestone: IssueMilestone.optional(),
-  iteration: IssueIteration.optional(),
-  parent: IssueParent.optional(),
-  schedule: IssueSchedule.optional(),
+  // Satellites that reference another resource are hydrated into that resource
+  // (the link rows are an internal detail — a consumer wants the label's name,
+  // the assignee's display name, the milestone's title) so a detail view renders
+  // in one round-trip rather than N+1 lookups.
+  assignees: z.array(User), // 1:N — the assigned users
+  labels: z.array(Label), // 1:N
+  watchers: z.array(User), // 1:N — the watching users
+  relations: z.array(IssueRelation), // 1:N (carries relatedIssueId + type; kept as-is)
+  category: Category.optional(), // 0..1
+  milestone: Milestone.optional(),
+  iteration: Iteration.optional(),
+  parent: Issue.optional(), // the parent issue
+  schedule: IssueSchedule.optional(), // value satellite — already self-contained
   estimation: IssueEstimation.optional(),
   progress: IssueProgress.optional(),
 });

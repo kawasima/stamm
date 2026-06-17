@@ -26,6 +26,12 @@ describe("project domain", () => {
     await db.destroy();
   });
 
+  it("getProjectByIdentifier returns null for an unknown identifier (not an error)", async () => {
+    const { db, b } = await setup();
+    expect(await b.getProjectByIdentifier({ identifier: "ghost" })).toBeNull();
+    await db.destroy();
+  });
+
   it("archives, unarchives, and changes visibility via the project's category", async () => {
     const { db, b } = await setup();
     const p = await b.createProject({ actorId: "u1", identifier: "proj", name: "P" });
