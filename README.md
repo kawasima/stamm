@@ -68,6 +68,16 @@ What the tools cover today (one MCP tool per operation unless noted):
 Modeled in `schema/` but not yet exposed as operations: wikis, automations, and
 webhooks.
 
+## Metrics
+
+stamm exposes the primary observations metrics are built from (status, schedule,
+and estimation change histories; the activity timeline; rich issue search) but
+does not compute the metrics themselves — those are a consumer concern. The
+reasoning is recorded in [ADR-0001](docs/adr/0001-metrics-are-a-consumer-concern.md),
+and [docs/metrics-cookbook.md](docs/metrics-cookbook.md) shows how to derive
+cycle time, throughput, due-date slippage, and more from the read tools (with a
+runnable example in [`sim/metrics.mjs`](sim/metrics.mjs)).
+
 ## Layers
 
 ```text

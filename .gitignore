@@ -15,6 +15,11 @@ quickstart.db
 quickstart.db-journal
 quickstart.db-wal
 quickstart.db-shm
+# the metrics example writes here
+metrics.db
+metrics.db-journal
+metrics.db-wal
+metrics.db-shm
 
 # Seeded signing keys (contain private keys; written once on first boot)
 stamm-seed-keys.json

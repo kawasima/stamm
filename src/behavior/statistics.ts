@@ -3,6 +3,16 @@ import { DateString, Hours, Id, Percentage } from "../schema/common.js";
 
 // ============================================================
 // Aggregated Statistics (read-only query behaviors)
+//
+// DEFERRED — not in the Behaviors interface, not exposed as MCP tools. Per
+// ADR-0001 (docs/adr/0001-metrics-are-a-consumer-concern.md), stamm exposes
+// primary observations and does not model metrics. The contracts below are
+// metric-agnostic, configuration-grounded current-state rollups: admissible as
+// server-side primitives ONLY when a consumer hits a scale wall that makes
+// counting client-side over issue_search impractical. Until then they stay
+// unimplemented and unexposed. Named/parameterized metrics (burndown) and
+// observations already covered by issue_search filters (overdue) were removed —
+// see the ADR and docs/metrics-cookbook.md.
 // ============================================================
 
 /** Get issue count by status category for a project or milestone */
@@ -52,22 +62,6 @@ export const GetIssueAssigneeSummary = z.function()
     unassigned: z.number().int(),
   })));
 
-/** Get burndown chart data for a milestone */
-export const GetBurndownData = z.function()
-  .args(z.object({
-    milestoneId: Id,
-    startDate: DateString.optional(),
-    endDate: DateString.optional(),
-  }))
-  .returns(z.promise(z.object({
-    dataPoints: z.array(z.object({
-      date: DateString,
-      totalIssues: z.number().int(),
-      openIssues: z.number().int(),
-      closedIssues: z.number().int(),
-    })),
-  })));
-
 /** Get time tracking summary for a project */
 export const GetProjectTimeSummary = z.function()
   .args(z.object({
@@ -79,15 +73,4 @@ export const GetProjectTimeSummary = z.function()
     totalSpentHours: Hours,
     totalEstimatedHours: Hours,
     averageDoneRatio: Percentage,
-  })));
-
-/** Get overdue issues summary */
-export const GetOverdueIssuesSummary = z.function()
-  .args(z.object({
-    projectId: Id.optional(),
-  }))
-  .returns(z.promise(z.object({
-    overdueCount: z.number().int(),
-    dueTodayCount: z.number().int(),
-    dueThisWeekCount: z.number().int(),
   })));
