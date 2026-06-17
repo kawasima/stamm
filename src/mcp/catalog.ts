@@ -89,6 +89,10 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "time_list", description: "List time entries", contract: B.ListTimeEntries, behavior: "listTimeEntries", annotations: RO },
   { name: "time_summary", description: "Summarize logged time", contract: B.GetTimeSummary, behavior: "getTimeSummary", annotations: RO },
 
+  // --- Activity (canonical timeline; read-only) ---
+  { name: "activity_list", description: "List activity-feed entries (newest first), filterable by project, user, action, target, or time range", contract: B.ListActivities, behavior: "listActivities", annotations: RO },
+  { name: "activity_get", description: "Get a single activity entry by ID", contract: B.GetActivity, behavior: "getActivity", annotations: RO },
+
   // --- Notifications ---
   { name: "notification_list", description: "List notifications for a user", contract: B.ListNotifications, behavior: "listNotifications", annotations: RO },
   { name: "notification_unread_count", description: "Get the unread notification count for a user", contract: B.GetUnreadNotificationCount, behavior: "getUnreadNotificationCount", annotations: RO },

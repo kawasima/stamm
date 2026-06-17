@@ -99,6 +99,10 @@ export interface Behaviors {
   listTimeEntries: Fn<typeof B.ListTimeEntries>;
   getTimeSummary: Fn<typeof B.GetTimeSummary>;
 
+  // --- Activity (canonical timeline; read-only) ---
+  listActivities: Fn<typeof B.ListActivities>;
+  getActivity: Fn<typeof B.GetActivity>;
+
   // --- Notifications ---
   listNotifications: Fn<typeof B.ListNotifications>;
   getUnreadNotificationCount: Fn<typeof B.GetUnreadNotificationCount>;

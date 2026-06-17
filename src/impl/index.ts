@@ -15,6 +15,7 @@ import { milestoneBehaviors } from "./domains/milestone.js";
 import { iterationBehaviors } from "./domains/iteration.js";
 import { timeEntryBehaviors } from "./domains/time-entry.js";
 import { notificationBehaviors } from "./domains/notification.js";
+import { activityBehaviors } from "./domains/activity.js";
 
 export { makeSqlite, makePostgres } from "./db/dialects.js";
 export { migrateToLatest } from "./db/migrate.js";
@@ -42,5 +43,6 @@ export function createSqlBehaviors(db: Kysely<Database>, opts: CtxOptions = {}):
     ...iterationBehaviors(ctx),
     ...timeEntryBehaviors(ctx),
     ...notificationBehaviors(ctx),
+    ...activityBehaviors(ctx),
   };
 }

@@ -40,6 +40,10 @@ What the tools cover today (one MCP tool per operation unless noted):
 - **Iterations** (sprints) — CRUD; progress.
 - **Time tracking** — log / read / update / delete entries; list; summary.
 - **Notifications** — list; unread count; mark one or all read.
+- **Activity feed** — the append-only timeline every mutation writes to; list it
+  newest-first (filter by project, user, action, target, or time range) or fetch
+  one entry by id. It is also the source of each entity's created / updated
+  timestamps.
 - **Configuration** (admin, via `admin_*`) — statuses, priorities, labels, issue
   types, categories, roles, users, user groups; workflow transitions; default
   status per project/type.
@@ -50,7 +54,7 @@ What the tools cover today (one MCP tool per operation unless noted):
   / list).
 
 Modeled in `schema/` but not yet exposed as operations: wikis, saved views,
-automations, templates, drafts, webhooks, and the activity feed.
+automations, templates, drafts, and webhooks.
 
 ## Layers
 
