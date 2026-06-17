@@ -13,7 +13,7 @@ import {
   IssueIteration,
   IssueRelation,
 } from "../../schema/index.js";
-import { IssueStatusChange } from "../../schema/index.js";
+import { IssueStatusChange, IssueScheduleChange, IssueEstimationChange } from "../../schema/index.js";
 import type { Issue as IssueT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
@@ -21,6 +21,7 @@ import { NotFoundError } from "../errors.js";
 import { sql } from "kysely";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
+import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, rolesOf } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
@@ -30,6 +31,7 @@ type IssueMethods =
   | "createIssue" | "getIssue" | "getIssueByKey" | "getIssueDetail"
   | "updateIssue" | "deleteIssue" | "moveIssue"
   | "transitionIssueStatus" | "getAvailableTransitions" | "listIssueStatusHistory"
+  | "listIssueScheduleHistory" | "listIssueEstimationHistory"
   | "listIssues" | "listChildIssues";
 
 export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
@@ -47,6 +49,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
   const iterationCodec = makeCodec(IssueIteration);
   const relationCodec = makeCodec(IssueRelation);
   const statusChangeCodec = makeCodec(IssueStatusChange);
+  const scheduleChangeCodec = makeCodec(IssueScheduleChange);
+  const estimationChangeCodec = makeCodec(IssueEstimationChange);
 
   const loadIssue = async (issueId: string): Promise<IssueT> => {
     const row = await db.selectFrom("issues").selectAll().where("id", "=", issueId).executeTakeFirst();
@@ -147,9 +151,11 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         if (args.parentIssueId) await trx.insertInto("issue_parents").values({ id: ctx.genId(), child_issue_id: iid, parent_issue_id: args.parentIssueId }).execute();
         if (args.startDate !== undefined || args.dueDate !== undefined) {
           await trx.insertInto("issue_schedules").values({ id: ctx.genId(), issue_id: iid, start_date: args.startDate ?? null, due_date: args.dueDate ?? null }).execute();
+          await recordScheduleChange(ctx, trx, { issueId: iid, projectId: args.projectId, userId: args.actorId, from: {}, to: { startDate: args.startDate, dueDate: args.dueDate } });
         }
         if (args.estimatedHours !== undefined) {
           await trx.insertInto("issue_estimations").values({ id: ctx.genId(), issue_id: iid, estimated_hours: args.estimatedHours }).execute();
+          await recordEstimationChange(ctx, trx, { issueId: iid, projectId: args.projectId, userId: args.actorId, fromHours: null, toHours: args.estimatedHours });
         }
         await appendActivity(ctx, trx, { projectId: args.projectId, userId: args.actorId, action: "created", targetType: "issue", targetId: iid });
         await notifyIssueEvent(ctx, trx, { projectId: args.projectId, issueId: iid, authorId: args.actorId, eventType: "issue.created", title: `${issue.key}-${issue.number}: ${issue.subject}`, actorId: args.actorId });
@@ -211,9 +217,15 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const issue = await loadIssue(issueId);
       await assertCanWrite(ctx, issue.projectId, actorId, "issue.delete");
       await db.transaction().execute(async (trx) => {
+        // Delete the Resource (the issue) and its current-state satellites. The
+        // Events stay: issue_status_changes / issue_schedule_changes /
+        // issue_estimation_changes / activity_entries are append-only and may
+        // still be referenced (e.g. by flow metrics), so they survive — the
+        // deletion itself is recorded as a `deleted` activity. (See the
+        // immutable data model: Resources are deletable, Events are not.)
         for (const t of [
           "issue_assignees", "issue_labels", "issue_watchers", "issue_categories", "issue_milestones",
-          "issue_schedules", "issue_estimations", "issue_progress", "issue_iterations", "issue_status_changes",
+          "issue_schedules", "issue_estimations", "issue_progress", "issue_iterations",
         ] as const) {
           await trx.deleteFrom(t).where("issue_id", "=", issueId).execute();
         }
@@ -221,7 +233,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         await trx.deleteFrom("issue_parents").where("parent_issue_id", "=", issueId).execute();
         await trx.deleteFrom("issue_relations").where("issue_id", "=", issueId).execute();
         await trx.deleteFrom("issue_relations").where("related_issue_id", "=", issueId).execute();
-        await trx.deleteFrom("activity_entries").where("target_type", "=", "issue").where("target_id", "=", issueId).execute();
+        await appendActivity(ctx, trx, { projectId: issue.projectId, userId: actorId, action: "deleted", targetType: "issue", targetId: issueId });
         await trx.deleteFrom("issues").where("id", "=", issueId).execute();
       });
     },
@@ -303,6 +315,38 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
       const items = rows.map((r) => statusChangeCodec.decode(r));
       const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
+      return { items: page.items, nextCursor: page.nextCursor };
+    },
+
+    listIssueScheduleHistory: async ({ issueId, pagination }) => {
+      const limit = pagination?.limit ?? 20;
+      const cursor = decodeCursor(pagination?.cursor);
+      let q = db.selectFrom("issue_schedule_changes").selectAll().where("issue_id", "=", issueId);
+      if (cursor) {
+        const sep = cursor.indexOf(" ");
+        const co = cursor.slice(0, sep);
+        const ci = cursor.slice(sep + 1);
+        q = q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]));
+      }
+      const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
+      const items = rows.map((r) => scheduleChangeCodec.decode(r));
+      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
+      return { items: page.items, nextCursor: page.nextCursor };
+    },
+
+    listIssueEstimationHistory: async ({ issueId, pagination }) => {
+      const limit = pagination?.limit ?? 20;
+      const cursor = decodeCursor(pagination?.cursor);
+      let q = db.selectFrom("issue_estimation_changes").selectAll().where("issue_id", "=", issueId);
+      if (cursor) {
+        const sep = cursor.indexOf(" ");
+        const co = cursor.slice(0, sep);
+        const ci = cursor.slice(sep + 1);
+        q = q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]));
+      }
+      const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
+      const items = rows.map((r) => estimationChangeCodec.decode(r));
+      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
       return { items: page.items, nextCursor: page.nextCursor };
     },
 

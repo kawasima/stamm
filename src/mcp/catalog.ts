@@ -24,6 +24,8 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "issue_transition", description: "Transition an issue to a new status (respects workflow rules)", contract: B.TransitionIssueStatus, behavior: "transitionIssueStatus", annotations: IDEM },
   { name: "issue_available_transitions", description: "List the statuses an issue may transition to from its current status", contract: B.GetAvailableTransitions, behavior: "getAvailableTransitions", annotations: RO },
   { name: "issue_history", description: "List an issue's status change history", contract: B.ListIssueStatusHistory, behavior: "listIssueStatusHistory", annotations: RO },
+  { name: "issue_schedule_history", description: "List an issue's schedule (start/due date) change history", contract: B.ListIssueScheduleHistory, behavior: "listIssueScheduleHistory", annotations: RO },
+  { name: "issue_estimation_history", description: "List an issue's estimation change history", contract: B.ListIssueEstimationHistory, behavior: "listIssueEstimationHistory", annotations: RO },
   { name: "issue_watch", description: "Watch an issue", contract: B.WatchIssue, behavior: "watchIssue", annotations: IDEM },
   { name: "issue_unwatch", description: "Stop watching an issue", contract: B.UnwatchIssue, behavior: "unwatchIssue", annotations: IDEM },
   { name: "issue_watchers", description: "List watchers of an issue", contract: B.ListIssueWatchers, behavior: "listIssueWatchers", annotations: RO },

@@ -16,6 +16,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
+import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
@@ -113,13 +114,27 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     setIssueSchedule: async ({ actorId, issueId, startDate, dueDate }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
-      return upsertOne("issue_schedules", scheduleCodec, issueId, IssueSchedule.parse({ id: ctx.genId(), issueId, startDate, dueDate }));
+      const value = IssueSchedule.parse({ id: ctx.genId(), issueId, startDate, dueDate });
+      await db.transaction().execute(async (trx) => {
+        const old = await trx.selectFrom("issue_schedules").select(["start_date", "due_date"]).where("issue_id", "=", issueId).executeTakeFirst();
+        await trx.deleteFrom("issue_schedules").where("issue_id", "=", issueId).execute();
+        await trx.insertInto("issue_schedules").values(scheduleCodec.encode(value) as never).execute();
+        await recordScheduleChange(ctx, trx, { issueId, projectId, userId: actorId, from: { startDate: old?.start_date, dueDate: old?.due_date }, to: { startDate, dueDate } });
+      });
+      return value;
     },
 
     setIssueEstimation: async ({ actorId, issueId, estimatedHours }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
-      return upsertOne("issue_estimations", estimationCodec, issueId, IssueEstimation.parse({ id: ctx.genId(), issueId, estimatedHours }));
+      const value = IssueEstimation.parse({ id: ctx.genId(), issueId, estimatedHours });
+      await db.transaction().execute(async (trx) => {
+        const old = await trx.selectFrom("issue_estimations").select("estimated_hours").where("issue_id", "=", issueId).executeTakeFirst();
+        await trx.deleteFrom("issue_estimations").where("issue_id", "=", issueId).execute();
+        await trx.insertInto("issue_estimations").values(estimationCodec.encode(value) as never).execute();
+        await recordEstimationChange(ctx, trx, { issueId, projectId, userId: actorId, fromHours: old?.estimated_hours ?? null, toHours: estimatedHours });
+      });
+      return value;
     },
 
     setIssueProgress: async ({ actorId, issueId, doneRatio }) => {

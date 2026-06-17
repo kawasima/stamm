@@ -56,6 +56,22 @@ describe("MCP end-to-end over a real SQL backend", () => {
     expect(bad.isError).toBe(true);
   });
 
+  it("schedule changes are queryable as a typed history through MCP", async () => {
+    const w = await seededBehaviors();
+    const client = await connect(w.b);
+    const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
+    const id = ((await client.callTool({ name: "issue_create", arguments: { ...base, subject: "x", dueDate: "2026-07-01" } })).structuredContent as { id: string }).id;
+
+    // move the due date twice via the compound issue_update tool
+    await client.callTool({ name: "issue_update", arguments: { actorId: w.alice.id, issueId: id, dueDate: "2026-07-10" } });
+    await client.callTool({ name: "issue_update", arguments: { actorId: w.alice.id, issueId: id, dueDate: "2026-07-20" } });
+
+    const hist = await client.callTool({ name: "issue_schedule_history", arguments: { issueId: id, pagination: { limit: 20 } } });
+    expect(hist.isError).toBeFalsy();
+    const items = (hist.structuredContent as { items: { toDueDate?: string }[] }).items;
+    expect(items.map((i) => i.toDueDate)).toEqual(["2026-07-01", "2026-07-10", "2026-07-20"]);
+  });
+
   it("a non-member create is rejected as isError", async () => {
     const w = await seededBehaviors();
     const client = await connect(w.b);

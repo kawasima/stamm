@@ -312,6 +312,28 @@ export interface Database {
   issue_templates: IssueTemplatesTable;
   project_views: ProjectViewsTable;
   issue_board_positions: IssueBoardPositionsTable;
+  issue_schedule_changes: IssueScheduleChangesTable;
+  issue_estimation_changes: IssueEstimationChangesTable;
+}
+
+export interface IssueScheduleChangesTable {
+  id: string;
+  issue_id: string;
+  user_id: string;
+  occurred_at: string;
+  from_start_date: string | null;
+  to_start_date: string | null;
+  from_due_date: string | null;
+  to_due_date: string | null;
+}
+
+export interface IssueEstimationChangesTable {
+  id: string;
+  issue_id: string;
+  user_id: string;
+  occurred_at: string;
+  from_hours: number | null;
+  to_hours: number;
 }
 
 export interface DraftIssuesTable {

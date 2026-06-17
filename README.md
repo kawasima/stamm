@@ -30,6 +30,10 @@ What the tools cover today (one MCP tool per operation unless noted):
   all set through one compound `issue_update`.
 - **Workflow** — status transitions constrained by a per-project/type workflow,
   with "available transitions" and status-change history.
+- **Change history** — append-only, typed histories for the metric-bearing
+  changes: status, schedule (start / due dates), and estimation. These feed flow
+  and predictability metrics; deleting an issue removes the issue but preserves
+  its event history (the deletion is itself recorded on the timeline).
 - **Issue relations** — relate / unrelate / list (blocks, relates-to, …).
 - **Comments** — add / edit / delete / list, with visibility.
 - **Attachments** — attach / get / delete / list by reference (binary upload is

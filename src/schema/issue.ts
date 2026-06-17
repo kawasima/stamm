@@ -57,6 +57,24 @@ export const IssueStatusChange = Event.extend({
   userId: Id,
 });
 
+/** Issue schedule change (E) - append-only history of start/due date changes */
+export const IssueScheduleChange = Event.extend({
+  issueId: Id,
+  fromStartDate: DateString.optional(),
+  toStartDate: DateString.optional(),
+  fromDueDate: DateString.optional(),
+  toDueDate: DateString.optional(),
+  userId: Id,
+});
+
+/** Issue estimation change (E) - append-only history of estimate changes */
+export const IssueEstimationChange = Event.extend({
+  issueId: Id,
+  fromHours: Hours.optional(),
+  toHours: Hours,
+  userId: Id,
+});
+
 // ============================================================
 // Current state (R) - intersection entities
 // ============================================================
@@ -154,6 +172,8 @@ export const IssueInclude = z.enum([
 export type IssueVisibility = z.infer<typeof IssueVisibility>;
 export type Issue = z.infer<typeof Issue>;
 export type IssueStatusChange = z.infer<typeof IssueStatusChange>;
+export type IssueScheduleChange = z.infer<typeof IssueScheduleChange>;
+export type IssueEstimationChange = z.infer<typeof IssueEstimationChange>;
 export type IssueAssignee = z.infer<typeof IssueAssignee>;
 export type IssueSchedule = z.infer<typeof IssueSchedule>;
 export type IssueEstimation = z.infer<typeof IssueEstimation>;

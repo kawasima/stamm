@@ -17,6 +17,8 @@ import {
   IssueProgress,
   IssueSchedule,
   IssueStatusChange,
+  IssueScheduleChange,
+  IssueEstimationChange,
   IssueVisibility,
 } from "../schema/issue.js";
 import {
@@ -176,6 +178,22 @@ export const ListIssueStatusHistory = z.function()
     pagination: PaginationParams,
   }))
   .returns(z.promise(PaginatedResult(IssueStatusChange)));
+
+/** List an issue's schedule (start/due date) change history */
+export const ListIssueScheduleHistory = z.function()
+  .args(z.object({
+    issueId: Id,
+    pagination: PaginationParams,
+  }))
+  .returns(z.promise(PaginatedResult(IssueScheduleChange)));
+
+/** List an issue's estimation change history */
+export const ListIssueEstimationHistory = z.function()
+  .args(z.object({
+    issueId: Id,
+    pagination: PaginationParams,
+  }))
+  .returns(z.promise(PaginatedResult(IssueEstimationChange)));
 
 // ============================================================
 // Assignment (supports multiple assignees)
