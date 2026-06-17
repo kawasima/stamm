@@ -10,7 +10,9 @@ A headless project management system. There is no UI — stamm ships the **model
 and the **behavior** of issue tracking, and exposes them over the
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) so that any
 client (Claude Code, an editor, your own front end) can drive it. If you want a
-UI, build the one you want on top of these tools.
+UI, build the one you want on top of these tools — [docs/showcase-kanban.md](docs/showcase-kanban.md)
+is a paste-into-Claude-Code prompt that builds a browser-direct Scrum kanban
+board against a shared stamm server (verified end to end).
 
 ![stamm concept](docs/images/concept.png)
 
