@@ -11,14 +11,7 @@ import {
   Resource,
 } from "./common.js";
 import { CustomFieldValue } from "./custom-field.js";
-import {
-  IssueCategory,
-  IssueLabel,
-  IssueMilestone,
-  IssueParent,
-  IssueWatcher,
-} from "./intersection.js";
-import { Iteration, IssueIteration } from "./iteration.js";
+import { Iteration } from "./iteration.js";
 import { IssueRelation } from "./issue-relation.js";
 import { Label } from "./label.js";
 import { User } from "./user.js";
@@ -149,14 +142,15 @@ export const IssueDetail = Issue.extend({
  * `undefined` means "not requested" and `[]` means "requested, none exist".
  */
 export const IssueListItem = Issue.extend({
-  assignees: z.array(IssueAssignee).optional(),
-  labels: z.array(IssueLabel).optional(),
-  watchers: z.array(IssueWatcher).optional(),
+  // Satellites are hydrated into their target resource, exactly as IssueDetail.
+  assignees: z.array(User).optional(),
+  labels: z.array(Label).optional(),
+  watchers: z.array(User).optional(),
   relations: z.array(IssueRelation).optional(),
-  category: IssueCategory.optional(),
-  milestone: IssueMilestone.optional(),
-  iteration: IssueIteration.optional(),
-  parent: IssueParent.optional(),
+  category: Category.optional(),
+  milestone: Milestone.optional(),
+  iteration: Iteration.optional(),
+  parent: Issue.optional(),
   schedule: IssueSchedule.optional(),
   estimation: IssueEstimation.optional(),
   progress: IssueProgress.optional(),

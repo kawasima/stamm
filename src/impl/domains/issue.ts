@@ -1,16 +1,9 @@
 import {
   Issue,
   IssueDetail,
-  IssueAssignee,
-  IssueLabel,
-  IssueWatcher,
-  IssueCategory,
-  IssueMilestone,
-  IssueParent,
   IssueSchedule,
   IssueEstimation,
   IssueProgress,
-  IssueIteration,
   IssueRelation,
   User,
   Label,
@@ -42,16 +35,9 @@ type IssueMethods =
 export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
   const db = ctx.db;
   const issueCodec = makeCodec(Issue, { json: ["customFields"] });
-  const assigneeCodec = makeCodec(IssueAssignee);
-  const labelCodec = makeCodec(IssueLabel);
-  const watcherCodec = makeCodec(IssueWatcher);
-  const categoryCodec = makeCodec(IssueCategory);
-  const milestoneCodec = makeCodec(IssueMilestone);
-  const parentCodec = makeCodec(IssueParent);
   const scheduleCodec = makeCodec(IssueSchedule);
   const estimationCodec = makeCodec(IssueEstimation);
   const progressCodec = makeCodec(IssueProgress);
-  const iterationCodec = makeCodec(IssueIteration);
   const relationCodec = makeCodec(IssueRelation);
   const statusChangeCodec = makeCodec(IssueStatusChange);
   const scheduleChangeCodec = makeCodec(IssueScheduleChange);
@@ -531,14 +517,45 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         const sat = await adb.selectFrom(table).selectAll().where(idCol, "in", pageIds).execute();
         for (const r of sat as Record<string, unknown>[]) (byId.get(String(r[idCol])) as Record<string, unknown>)[key] = codec.decode(r);
       };
-      if (include.includes("assignees")) await attachMany("assignees", "issue_assignees", assigneeCodec);
-      if (include.includes("labels")) await attachMany("labels", "issue_labels", labelCodec);
-      if (include.includes("watchers")) await attachMany("watchers", "issue_watchers", watcherCodec);
+      // Hydrated variants: like attach{Many,One} but join the junction to its
+      // target and decode the target resource (mirrors getIssueDetail). The
+      // junction's issue id is carried out under `__iid` so rows still group by
+      // issue, then dropped before the target row is decoded.
+      const attachManyHydrated = async (key: string, junction: string, target: string, fk: string, codec: { decode: (r: Record<string, unknown>) => unknown }) => {
+        for (const i of items) (i as Record<string, unknown>)[key] = [];
+        if (!pageIds.length) return;
+        const rows = await adb.selectFrom(junction)
+          .innerJoin(target, `${target}.id`, `${junction}.${fk}`)
+          .where(`${junction}.issue_id`, "in", pageIds)
+          .select(`${junction}.issue_id as __iid`)
+          .selectAll(target)
+          .execute();
+        for (const r of rows as Record<string, unknown>[]) {
+          const iid = String(r.__iid); delete r.__iid;
+          ((byId.get(iid) as Record<string, unknown[]>)[key]).push(codec.decode(r));
+        }
+      };
+      const attachOneHydrated = async (key: string, junction: string, target: string, fk: string, codec: { decode: (r: Record<string, unknown>) => unknown }, issueCol = "issue_id") => {
+        if (!pageIds.length) return;
+        const rows = await adb.selectFrom(junction)
+          .innerJoin(target, `${target}.id`, `${junction}.${fk}`)
+          .where(`${junction}.${issueCol}`, "in", pageIds)
+          .select(`${junction}.${issueCol} as __iid`)
+          .selectAll(target)
+          .execute();
+        for (const r of rows as Record<string, unknown>[]) {
+          const iid = String(r.__iid); delete r.__iid;
+          (byId.get(iid) as Record<string, unknown>)[key] = codec.decode(r);
+        }
+      };
+      if (include.includes("assignees")) await attachManyHydrated("assignees", "issue_assignees", "users", "assignee_id", userCodec);
+      if (include.includes("labels")) await attachManyHydrated("labels", "issue_labels", "labels", "label_id", labelResCodec);
+      if (include.includes("watchers")) await attachManyHydrated("watchers", "issue_watchers", "users", "user_id", userCodec);
       if (include.includes("relations")) await attachMany("relations", "issue_relations", relationCodec);
-      if (include.includes("category")) await attachOne("category", "issue_categories", categoryCodec);
-      if (include.includes("milestone")) await attachOne("milestone", "issue_milestones", milestoneCodec);
-      if (include.includes("iteration")) await attachOne("iteration", "issue_iterations", iterationCodec);
-      if (include.includes("parent")) await attachOne("parent", "issue_parents", parentCodec, "child_issue_id");
+      if (include.includes("category")) await attachOneHydrated("category", "issue_categories", "categories", "category_id", categoryResCodec);
+      if (include.includes("milestone")) await attachOneHydrated("milestone", "issue_milestones", "milestones", "milestone_id", milestoneResCodec);
+      if (include.includes("iteration")) await attachOneHydrated("iteration", "issue_iterations", "iterations", "iteration_id", iterationResCodec);
+      if (include.includes("parent")) await attachOneHydrated("parent", "issue_parents", "issues", "parent_issue_id", issueCodec, "child_issue_id");
       if (include.includes("schedule")) await attachOne("schedule", "issue_schedules", scheduleCodec);
       if (include.includes("estimation")) await attachOne("estimation", "issue_estimations", estimationCodec);
       if (include.includes("progress")) await attachOne("progress", "issue_progress", progressCodec);

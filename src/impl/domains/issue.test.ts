@@ -200,7 +200,7 @@ describe("issue domain — listIssues (search)", () => {
     const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "S", assigneeIds: [w.alice.id] });
     const res = await w.issues.listIssues({ actorId: w.alice.id, filter: {}, include: ["assignees"], pagination: { limit: 20 } });
     const row = res.items.find((i) => i.id === issue.id)!;
-    expect(row.assignees?.map((a) => a.assigneeId)).toEqual([w.alice.id]);
+    expect(row.assignees?.map((a) => a.id)).toEqual([w.alice.id]);
     expect(row.labels).toBeUndefined(); // not requested
     await w.db.destroy();
   });

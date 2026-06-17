@@ -92,6 +92,22 @@ describe("issue satellites", () => {
     await w.db.destroy();
   });
 
+  it("listIssues include hydrates satellites into their target resources", async () => {
+    const w = await world();
+    const label = await w.config.createLabel({ actorId: w.admin.id, projectId: w.proj.id, name: "bug", color: "#ff0000" });
+    const ms = await w.milestones.createMilestone({ actorId: w.admin.id, projectId: w.proj.id, name: "v1" });
+    await w.sat.setIssueLabels({ actorId: w.alice.id, issueId: w.issue.id, labelIds: [label.id] });
+    await w.sat.setIssueMilestone({ actorId: w.alice.id, issueId: w.issue.id, milestoneId: ms.id });
+    await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.alice.id] });
+
+    const res = await w.issues.listIssues({ actorId: w.alice.id, filter: {}, include: ["labels", "milestone", "assignees"], pagination: { limit: 20 } });
+    const row = res.items.find((i) => i.id === w.issue.id)!;
+    expect(row.labels).toEqual([expect.objectContaining({ id: label.id, name: "bug", color: "#ff0000" })]);
+    expect(row.milestone).toEqual(expect.objectContaining({ id: ms.id, name: "v1" }));
+    expect(row.assignees).toEqual([expect.objectContaining({ id: w.alice.id, displayName: "Alice" })]);
+    await w.db.destroy();
+  });
+
   it("gates setIssueAssignees on the issue.assign permission", async () => {
     const w = await world();
     const noPerm = await w.config.createRole({ actorId: w.admin.id, name: "NoAssign", permissions: ["issue.update"], issuesVisibility: "all" });
