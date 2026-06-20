@@ -131,7 +131,7 @@ describe("issue domain — lifecycle", () => {
     const moved = await w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: w.doing.id });
     expect(moved.statusId).toBe(w.doing.id);
 
-    const history = await w.issues.listIssueStatusHistory({ issueId: issue.id, pagination: { limit: 20 } });
+    const history = await w.issues.listIssueStatusHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(history.items).toHaveLength(1);
     expect(history.items[0]).toMatchObject({ fromStatusId: w.todo.id, toStatusId: w.doing.id, userId: w.alice.id });
 
@@ -222,7 +222,7 @@ describe("issue domain — listIssues (search)", () => {
     const w = await world();
     const parent = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "parent" });
     const child = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "child", parentIssueId: parent.id });
-    const kids = await w.issues.listChildIssues({ parentIssueId: parent.id, pagination: { limit: 20 } });
+    const kids = await w.issues.listChildIssues({ actorId: w.alice.id, parentIssueId: parent.id, pagination: { limit: 20 } });
     expect(kids.items.map((i) => i.id)).toEqual([child.id]);
     await w.db.destroy();
   });

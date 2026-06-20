@@ -3,7 +3,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type AttachmentMethods = "createAttachment" | "getAttachment" | "deleteAttachment" | "listAttachments";
@@ -24,6 +24,13 @@ export function attachmentBehaviors(ctx: Ctx): Pick<Behaviors, AttachmentMethods
     await assertCanWrite(ctx, row.project_id, actorId, perm);
   };
 
+  /** Read gate: an attachment on an issue is only visible to those who can see
+   *  the issue. Non-issue targets are out of v1 scope (open). */
+  const gateRead = async (targetType: string, targetId: string, actorId: string) => {
+    if (targetType !== "issue") return;
+    await assertCanReadIssue(ctx, targetId, actorId);
+  };
+
   return {
     createAttachment: async ({ targetType, targetId, actorId, filename, contentType, sizeBytes, storageKey, description }) => {
       await gate(targetType, targetId, actorId, "attachment.create");
@@ -32,9 +39,10 @@ export function attachmentBehaviors(ctx: Ctx): Pick<Behaviors, AttachmentMethods
       return attachment;
     },
 
-    getAttachment: async ({ attachmentId }) => {
+    getAttachment: async ({ actorId, attachmentId }) => {
       const row = await db.selectFrom("attachments").selectAll().where("id", "=", attachmentId).executeTakeFirst();
       if (!row) throw new NotFoundError("Attachment", attachmentId);
+      await gateRead(row.target_type, row.target_id, actorId);
       return codec.decode(row);
     },
 
@@ -45,7 +53,8 @@ export function attachmentBehaviors(ctx: Ctx): Pick<Behaviors, AttachmentMethods
       await db.deleteFrom("attachments").where("id", "=", attachmentId).execute();
     },
 
-    listAttachments: async ({ targetType, targetId, pagination }) => {
+    listAttachments: async ({ actorId, targetType, targetId, pagination }) => {
+      await gateRead(targetType, targetId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("attachments").selectAll().where("target_type", "=", targetType).where("target_id", "=", targetId);

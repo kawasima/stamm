@@ -19,7 +19,7 @@ export const CreateComment = z.function()
 
 /** Get a comment by ID */
 export const GetComment = z.function()
-  .args(z.object({ commentId: Id }))
+  .args(z.object({ actorId: Id, commentId: Id }))
   .returns(z.promise(Comment));
 
 /** Update a comment's body */
@@ -40,6 +40,7 @@ export const DeleteComment = z.function()
 /** List comments on an issue */
 export const ListComments = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     sortDirection: SortDirection.optional(),
     pagination: PaginationParams,

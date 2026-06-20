@@ -23,7 +23,7 @@ export const CreateAttachment = z.function()
 
 /** Get an attachment by ID */
 export const GetAttachment = z.function()
-  .args(z.object({ attachmentId: Id }))
+  .args(z.object({ actorId: Id, attachmentId: Id }))
   .returns(z.promise(Attachment));
 
 /** Delete an attachment */
@@ -34,6 +34,7 @@ export const DeleteAttachment = z.function()
 /** List attachments on a target */
 export const ListAttachments = z.function()
   .args(z.object({
+    actorId: Id,
     targetType: z.string().min(1),
     targetId: Id,
     pagination: PaginationParams,

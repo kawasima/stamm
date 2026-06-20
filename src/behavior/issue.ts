@@ -174,6 +174,7 @@ export const GetAvailableTransitions = z.function()
 /** List the status change history of an issue (cycle-time / time-in-status data) */
 export const ListIssueStatusHistory = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     pagination: PaginationParams,
   }))
@@ -182,6 +183,7 @@ export const ListIssueStatusHistory = z.function()
 /** List an issue's schedule (start/due date) change history */
 export const ListIssueScheduleHistory = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     pagination: PaginationParams,
   }))
@@ -190,6 +192,7 @@ export const ListIssueScheduleHistory = z.function()
 /** List an issue's estimation change history */
 export const ListIssueEstimationHistory = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     pagination: PaginationParams,
   }))
@@ -324,6 +327,7 @@ export const RemoveIssueParent = z.function()
 /** List child issues (subtasks) of an issue */
 export const ListChildIssues = z.function()
   .args(z.object({
+    actorId: Id,
     parentIssueId: Id,
     pagination: PaginationParams,
   }))
@@ -359,7 +363,7 @@ export const IsWatchingIssue = z.function()
 
 /** List watchers of an issue */
 export const ListIssueWatchers = z.function()
-  .args(z.object({ issueId: Id }))
+  .args(z.object({ actorId: Id, issueId: Id }))
   .returns(z.promise(z.object({ watchers: z.array(IssueWatcher) })));
 
 // ============================================================

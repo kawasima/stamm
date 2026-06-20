@@ -21,7 +21,7 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, rolesOf } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf, rolesOf } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
@@ -335,7 +335,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       return { transitions: out };
     },
 
-    listIssueStatusHistory: async ({ issueId, pagination }) => {
+    listIssueStatusHistory: async ({ actorId, issueId, pagination }) => {
+      await assertCanReadIssue(ctx, issueId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_status_changes").selectAll().where("issue_id", "=", issueId);
@@ -351,7 +352,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    listIssueScheduleHistory: async ({ issueId, pagination }) => {
+    listIssueScheduleHistory: async ({ actorId, issueId, pagination }) => {
+      await assertCanReadIssue(ctx, issueId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_schedule_changes").selectAll().where("issue_id", "=", issueId);
@@ -367,7 +369,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    listIssueEstimationHistory: async ({ issueId, pagination }) => {
+    listIssueEstimationHistory: async ({ actorId, issueId, pagination }) => {
+      await assertCanReadIssue(ctx, issueId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_estimation_changes").selectAll().where("issue_id", "=", issueId);
@@ -383,7 +386,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    listChildIssues: async ({ parentIssueId, pagination }) => {
+    listChildIssues: async ({ actorId, parentIssueId, pagination }) => {
+      await assertCanReadIssue(ctx, parentIssueId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = adb

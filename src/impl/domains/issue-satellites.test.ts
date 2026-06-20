@@ -57,9 +57,9 @@ describe("issue satellites", () => {
     const a = await w.sat.watchIssue({ actorId: w.alice.id, issueId: w.issue.id });
     const b = await w.sat.watchIssue({ actorId: w.alice.id, issueId: w.issue.id });
     expect(b.id).toBe(a.id); // idempotent
-    expect((await w.sat.listIssueWatchers({ issueId: w.issue.id })).watchers).toHaveLength(1);
+    expect((await w.sat.listIssueWatchers({ actorId: w.alice.id, issueId: w.issue.id })).watchers).toHaveLength(1);
     await w.sat.unwatchIssue({ actorId: w.alice.id, issueId: w.issue.id });
-    expect((await w.sat.listIssueWatchers({ issueId: w.issue.id })).watchers).toHaveLength(0);
+    expect((await w.sat.listIssueWatchers({ actorId: w.alice.id, issueId: w.issue.id })).watchers).toHaveLength(0);
     await w.db.destroy();
   });
 
@@ -67,9 +67,9 @@ describe("issue satellites", () => {
     const w = await world();
     const other = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id, subject: "Other" });
     const rel = await w.sat.createIssueRelation({ actorId: w.alice.id, issueId: w.issue.id, relatedIssueId: other.id, relationType: "blocks" });
-    expect((await w.sat.listIssueRelations({ issueId: w.issue.id, pagination: { limit: 20 } })).items).toHaveLength(1);
+    expect((await w.sat.listIssueRelations({ actorId: w.alice.id, issueId: w.issue.id, pagination: { limit: 20 } })).items).toHaveLength(1);
     await w.sat.deleteIssueRelation({ actorId: w.alice.id, relationId: rel.id });
-    expect((await w.sat.listIssueRelations({ issueId: w.issue.id, pagination: { limit: 20 } })).items).toHaveLength(0);
+    expect((await w.sat.listIssueRelations({ actorId: w.alice.id, issueId: w.issue.id, pagination: { limit: 20 } })).items).toHaveLength(0);
     await expect(w.sat.deleteIssueRelation({ actorId: w.alice.id, relationId: rel.id })).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });

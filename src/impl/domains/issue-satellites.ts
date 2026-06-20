@@ -18,7 +18,7 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type SatelliteMethods =
@@ -162,7 +162,8 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       await db.deleteFrom("issue_watchers").where("issue_id", "=", issueId).where("user_id", "=", actorId).execute();
     },
 
-    listIssueWatchers: async ({ issueId }) => {
+    listIssueWatchers: async ({ actorId, issueId }) => {
+      await assertCanReadIssue(ctx, issueId, actorId);
       const rows = await db.selectFrom("issue_watchers").selectAll().where("issue_id", "=", issueId).orderBy("id").execute();
       return { watchers: rows.map((r) => watcherCodec.decode(r)) };
     },
@@ -182,7 +183,8 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       await db.deleteFrom("issue_relations").where("id", "=", relationId).execute();
     },
 
-    listIssueRelations: async ({ issueId, relationType, pagination }) => {
+    listIssueRelations: async ({ actorId, issueId, relationType, pagination }) => {
+      await assertCanReadIssue(ctx, issueId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_relations").selectAll().where("issue_id", "=", issueId);

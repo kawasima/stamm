@@ -39,15 +39,15 @@ describe("comments", () => {
     const w = await world();
     const c1 = await w.comments.createComment({ issueId: w.issue.id, actorId: w.alice.id, body: "first" });
     await w.comments.createComment({ issueId: w.issue.id, actorId: w.alice.id, body: "second" });
-    const list = await w.comments.listComments({ issueId: w.issue.id, pagination: { limit: 20 } });
+    const list = await w.comments.listComments({ actorId: w.alice.id, issueId: w.issue.id, pagination: { limit: 20 } });
     expect(list.items.map((c) => c.body)).toEqual(["first", "second"]);
 
     const updated = await w.comments.updateComment({ actorId: w.alice.id, commentId: c1.id, body: "edited" });
     expect(updated.body).toBe("edited");
-    expect((await w.comments.getComment({ commentId: c1.id })).body).toBe("edited");
+    expect((await w.comments.getComment({ actorId: w.alice.id, commentId: c1.id })).body).toBe("edited");
 
     await w.comments.deleteComment({ actorId: w.alice.id, commentId: c1.id });
-    await expect(w.comments.getComment({ commentId: c1.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.comments.getComment({ actorId: w.alice.id, commentId: c1.id })).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });
 
@@ -69,13 +69,13 @@ describe("attachments (metadata only)", () => {
       filename: "spec.pdf", contentType: "application/pdf", sizeBytes: 1024, storageKey: "s3://bucket/spec.pdf",
     });
     expect(a).toMatchObject({ filename: "spec.pdf", targetId: w.issue.id, authorId: w.alice.id });
-    expect((await w.attachments.getAttachment({ attachmentId: a.id })).storageKey).toBe("s3://bucket/spec.pdf");
+    expect((await w.attachments.getAttachment({ actorId: w.alice.id, attachmentId: a.id })).storageKey).toBe("s3://bucket/spec.pdf");
 
-    const list = await w.attachments.listAttachments({ targetType: "issue", targetId: w.issue.id, pagination: { limit: 20 } });
+    const list = await w.attachments.listAttachments({ actorId: w.alice.id, targetType: "issue", targetId: w.issue.id, pagination: { limit: 20 } });
     expect(list.items).toHaveLength(1);
 
     await w.attachments.deleteAttachment({ actorId: w.alice.id, attachmentId: a.id });
-    await expect(w.attachments.getAttachment({ attachmentId: a.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.attachments.getAttachment({ actorId: w.alice.id, attachmentId: a.id })).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });
 });

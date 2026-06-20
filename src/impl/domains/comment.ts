@@ -5,7 +5,7 @@ import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type CommentMethods = "createComment" | "getComment" | "updateComment" | "deleteComment" | "listComments";
@@ -43,7 +43,11 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       return comment;
     },
 
-    getComment: async ({ commentId }) => loadComment(commentId),
+    getComment: async ({ actorId, commentId }) => {
+      const comment = await loadComment(commentId);
+      await assertCanReadIssue(ctx, comment.issueId, actorId);
+      return comment;
+    },
 
     updateComment: async ({ actorId, commentId, body, visibility }) => {
       const current = await loadComment(commentId);
@@ -59,7 +63,8 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       await db.deleteFrom("comments").where("id", "=", commentId).execute();
     },
 
-    listComments: async ({ issueId, sortDirection, pagination }) => {
+    listComments: async ({ actorId, issueId, sortDirection, pagination }) => {
+      await assertCanReadIssue(ctx, issueId, actorId);
       const limit = pagination?.limit ?? 20;
       const dir: "asc" | "desc" = sortDirection === "desc" ? "desc" : "asc";
       const cursor = decodeCursor(pagination?.cursor);

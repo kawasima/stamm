@@ -49,7 +49,7 @@ describe("MCP end-to-end over a real SQL backend", () => {
 
     const ok = await client.callTool({ name: "issue_transition", arguments: { actorId: w.alice.id, issueId: id, toStatusId: w.done.id } });
     expect(ok.isError).toBeFalsy();
-    const history = await client.callTool({ name: "issue_history", arguments: { issueId: id, pagination: { limit: 20 } } });
+    const history = await client.callTool({ name: "issue_history", arguments: { actorId: w.alice.id, issueId: id, pagination: { limit: 20 } } });
     expect((history.structuredContent as { items: unknown[] }).items).toHaveLength(1);
 
     const bad = await client.callTool({ name: "issue_transition", arguments: { actorId: w.alice.id, issueId: id, toStatusId: w.todo.id } });
@@ -66,7 +66,7 @@ describe("MCP end-to-end over a real SQL backend", () => {
     await client.callTool({ name: "issue_update", arguments: { actorId: w.alice.id, issueId: id, dueDate: "2026-07-10" } });
     await client.callTool({ name: "issue_update", arguments: { actorId: w.alice.id, issueId: id, dueDate: "2026-07-20" } });
 
-    const hist = await client.callTool({ name: "issue_schedule_history", arguments: { issueId: id, pagination: { limit: 20 } } });
+    const hist = await client.callTool({ name: "issue_schedule_history", arguments: { actorId: w.alice.id, issueId: id, pagination: { limit: 20 } } });
     expect(hist.isError).toBeFalsy();
     const items = (hist.structuredContent as { items: { toDueDate?: string }[] }).items;
     expect(items.map((i) => i.toDueDate)).toEqual(["2026-07-01", "2026-07-10", "2026-07-20"]);

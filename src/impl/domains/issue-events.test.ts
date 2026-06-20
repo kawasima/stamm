@@ -40,7 +40,7 @@ describe("schedule / estimation change events", () => {
     const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "S", dueDate: "2026-06-10" });
 
     // initial event at creation: from null -> 2026-06-10
-    let hist = await w.issues.listIssueScheduleHistory({ issueId: issue.id, pagination: { limit: 20 } });
+    let hist = await w.issues.listIssueScheduleHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(hist.items).toHaveLength(1);
     expect(hist.items[0].toDueDate).toBe("2026-06-10");
     expect(hist.items[0].fromDueDate).toBeUndefined();
@@ -48,7 +48,7 @@ describe("schedule / estimation change events", () => {
     await w.sat.setIssueSchedule({ actorId: w.alice.id, issueId: issue.id, dueDate: "2026-06-20" });
     await w.sat.setIssueSchedule({ actorId: w.alice.id, issueId: issue.id, dueDate: "2026-06-20" }); // no change -> no event
 
-    hist = await w.issues.listIssueScheduleHistory({ issueId: issue.id, pagination: { limit: 20 } });
+    hist = await w.issues.listIssueScheduleHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(hist.items).toHaveLength(2);
     expect(hist.items[1]).toMatchObject({ fromDueDate: "2026-06-10", toDueDate: "2026-06-20" });
     await w.db.destroy();
@@ -59,7 +59,7 @@ describe("schedule / estimation change events", () => {
     const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "S", estimatedHours: 4 });
     await w.sat.setIssueEstimation({ actorId: w.alice.id, issueId: issue.id, estimatedHours: 6 });
 
-    const hist = await w.issues.listIssueEstimationHistory({ issueId: issue.id, pagination: { limit: 20 } });
+    const hist = await w.issues.listIssueEstimationHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(hist.items.map((e) => e.toHours)).toEqual([4, 6]);
     expect(hist.items[1]).toMatchObject({ fromHours: 4, toHours: 6 });
 
@@ -73,7 +73,7 @@ describe("schedule / estimation change events", () => {
     const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "S", dueDate: "2026-06-10" });
     await w.sat.setIssueSchedule({ actorId: w.alice.id, issueId: issue.id, dueDate: "2026-06-25" });
 
-    const hist = await w.issues.listIssueScheduleHistory({ issueId: issue.id, pagination: { limit: 50 } });
+    const hist = await w.issues.listIssueScheduleHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 50 } });
     const committed = hist.items[0].toDueDate!;
     const current = hist.items[hist.items.length - 1].toDueDate!;
     const slipDays = (Date.parse(current) - Date.parse(committed)) / 86_400_000;
@@ -93,8 +93,8 @@ describe("issue deletion preserves events (immutable data model)", () => {
     // the resource is gone
     await expect(w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id })).rejects.toThrow();
 
-    // but its events survive
-    const schedule = await w.issues.listIssueScheduleHistory({ issueId: issue.id, pagination: { limit: 20 } });
+    // but its events survive — only a global admin can audit a deleted issue's history
+    const schedule = await w.issues.listIssueScheduleHistory({ actorId: w.admin.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(schedule.items.length).toBeGreaterThan(0);
 
     const feed = await w.activity.listActivities({ targetId: issue.id, pagination: { limit: 50 } });

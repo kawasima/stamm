@@ -26,6 +26,7 @@ export const DeleteIssueRelation = z.function()
 /** List relations for an issue */
 export const ListIssueRelations = z.function()
   .args(z.object({
+    actorId: Id,
     issueId: Id,
     relationType: IssueRelationType.optional(),
     pagination: PaginationParams,
