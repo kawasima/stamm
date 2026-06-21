@@ -16,7 +16,10 @@ export const CustomFieldType = z.enum([
 ]);
 
 export const CustomFieldConstraints = z.object({
-  regexp: z.string().optional(),
+  // Capped: this pattern is compiled with `new RegExp` and run against issue
+  // values, so an unbounded pattern is a ReDoS lever. A short cap, combined with
+  // the bounded value length below, keeps backtracking finite.
+  regexp: z.string().max(500).optional(),
   minLength: z.number().int().optional(),
   maxLength: z.number().int().optional(),
   minValue: z.number().optional(),
@@ -24,8 +27,8 @@ export const CustomFieldConstraints = z.object({
 });
 
 export const CustomFieldScope = z.object({
-  projectIds: z.array(Id).optional(),
-  issueTypeIds: z.array(Id).optional(),
+  projectIds: z.array(Id).max(500).optional(),
+  issueTypeIds: z.array(Id).max(500).optional(),
 });
 
 export const CustomFieldDefinition = Resource.extend({
@@ -33,8 +36,8 @@ export const CustomFieldDefinition = Resource.extend({
   fieldType: CustomFieldType,
   description: z.string().max(500).optional(),
   isRequired: z.boolean().default(false),
-  defaultValue: z.string().optional(),
-  possibleValues: z.array(z.string()).optional(),
+  defaultValue: z.string().max(10_000).optional(),
+  possibleValues: z.array(z.string().max(1_000)).max(1_000).optional(),
   constraints: CustomFieldConstraints,
   scope: CustomFieldScope,
   sortOrder: SortOrder,
@@ -45,10 +48,10 @@ export const CustomFieldDefinition = Resource.extend({
 export const CustomFieldValue = z.object({
   fieldId: Id,
   value: z.union([
-    z.string(),
+    z.string().max(10_000),
     z.number(),
     z.boolean(),
-    z.array(z.string()),
+    z.array(z.string().max(10_000)).max(1_000),
   ]),
 });
 

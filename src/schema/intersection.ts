@@ -11,13 +11,13 @@ import { Event, Id, Resource } from "./common.js";
 export const ProjectMemberJoin = Event.extend({
   projectId: Id,
   userId: Id,
-  roleIds: z.array(Id).min(1),
+  roleIds: z.array(Id).min(1).max(100),
 });
 
 export const ProjectMembership = Resource.extend({
   projectId: Id,
   userId: Id,
-  roleIds: z.array(Id).min(1),
+  roleIds: z.array(Id).min(1).max(100),
 });
 
 export const ProjectMemberLeave = Event.extend({

@@ -11,16 +11,20 @@ import { StatusCategory } from "./status.js";
 // ProjectView (saved views/queries).
 // ============================================================
 
+/** Cap on id-list filters: enough for any real query, small enough that the
+ *  resulting `IN (...)` clause can't be weaponized into a giant query. */
+const ID_LIST_MAX = 200;
+
 export const IssueFilter = z.object({
   projectId: Id.optional(),
-  projectIds: z.array(Id).optional(),
-  issueTypeIds: z.array(Id).optional(),
-  statusIds: z.array(Id).optional(),
-  statusCategories: z.array(StatusCategory).optional(),
-  priorityIds: z.array(Id).optional(),
-  assigneeIds: z.array(Id).optional(),
+  projectIds: z.array(Id).max(ID_LIST_MAX).optional(),
+  issueTypeIds: z.array(Id).max(ID_LIST_MAX).optional(),
+  statusIds: z.array(Id).max(ID_LIST_MAX).optional(),
+  statusCategories: z.array(StatusCategory).max(ID_LIST_MAX).optional(),
+  priorityIds: z.array(Id).max(ID_LIST_MAX).optional(),
+  assigneeIds: z.array(Id).max(ID_LIST_MAX).optional(),
   authorId: Id.optional(),
-  labelIds: z.array(Id).optional(),
+  labelIds: z.array(Id).max(ID_LIST_MAX).optional(),
   milestoneId: Id.optional(),
   iterationId: Id.optional(),
   categoryId: Id.optional(),
@@ -47,7 +51,7 @@ export const IssueFilter = z.object({
     fieldId: Id,
     value: z.union([z.string(), z.number(), z.boolean()]),
   }).optional(),
-  query: z.string().optional(),
+  query: z.string().max(200).optional(),
 });
 
 export type IssueFilter = z.infer<typeof IssueFilter>;

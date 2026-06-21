@@ -50,10 +50,10 @@ export const CreateIssue = z.function()
     subject: z.string().min(1).max(500),
     description: MarkdownContent.optional(),
     visibility: IssueVisibility.optional(),
-    customFields: z.array(CustomFieldValue).optional(),
+    customFields: z.array(CustomFieldValue).max(200).optional(),
     // Compound fields — set in one call for convenience
-    assigneeIds: z.array(Id).optional(),
-    labelIds: z.array(Id).optional(),
+    assigneeIds: z.array(Id).max(200).optional(),
+    labelIds: z.array(Id).max(200).optional(),
     milestoneId: Id.optional(),
     categoryId: Id.optional(),
     parentIssueId: Id.optional(),
@@ -95,7 +95,7 @@ export const UpdateIssue = z.function()
     subject: z.string().min(1).max(500).optional(),
     description: MarkdownContent.optional(),
     visibility: IssueVisibility.optional(),
-    customFields: z.array(CustomFieldValue).optional(),
+    customFields: z.array(CustomFieldValue).max(200).optional(),
   }))
   .returns(z.promise(Issue));
 
@@ -225,7 +225,7 @@ export const SetIssueAssignees = z.function()
   .args(z.object({
     actorId: Id,
     issueId: Id,
-    assigneeIds: z.array(Id),
+    assigneeIds: z.array(Id).max(200),
   }))
   .returns(z.promise(z.object({ assignees: z.array(IssueAssignee) })));
 
@@ -261,7 +261,7 @@ export const SetIssueLabels = z.function()
   .args(z.object({
     actorId: Id,
     issueId: Id,
-    labelIds: z.array(Id),
+    labelIds: z.array(Id).max(200),
   }))
   .returns(z.promise(z.object({ labels: z.array(IssueLabel) })));
 
@@ -406,11 +406,11 @@ export const SetIssueProgress = z.function()
 export const BulkUpdateIssues = z.function()
   .args(z.object({
     actorId: Id,
-    issueIds: z.array(Id).min(1),
+    issueIds: z.array(Id).min(1).max(1000),
     priorityId: Id.optional(),
     issueTypeId: Id.optional(),
-    assigneeIds: z.array(Id).optional(),
-    labelIds: z.array(Id).optional(),
+    assigneeIds: z.array(Id).max(200).optional(),
+    labelIds: z.array(Id).max(200).optional(),
     milestoneId: Id.optional(),
     categoryId: Id.optional(),
     statusId: Id.optional(),
@@ -429,7 +429,7 @@ export const BulkUpdateIssues = z.function()
 export const BulkDeleteIssues = z.function()
   .args(z.object({
     actorId: Id,
-    issueIds: z.array(Id).min(1),
+    issueIds: z.array(Id).min(1).max(1000),
   }))
   .returns(z.promise(z.object({
     deletedCount: z.number().int(),

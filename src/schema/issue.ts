@@ -43,7 +43,7 @@ export const Issue = LongTermEvent
     authorId: Id,
     visibility: IssueVisibility.default("public"),
 
-    customFields: z.array(CustomFieldValue).default([]),
+    customFields: z.array(CustomFieldValue).max(200).default([]),
   });
 
 /** Issue status change (E) - append-only history of status transitions */

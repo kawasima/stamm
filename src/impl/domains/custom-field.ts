@@ -47,7 +47,19 @@ async function validateValue(ctx: Ctx, def: CustomFieldDefinitionT, value: Custo
   const checkStr = (s: string) => {
     if (c.minLength !== undefined && s.length < c.minLength) fail(def, `shorter than minLength ${c.minLength}`);
     if (c.maxLength !== undefined && s.length > c.maxLength) fail(def, `longer than maxLength ${c.maxLength}`);
-    if (c.regexp !== undefined && !new RegExp(c.regexp).test(s)) fail(def, `does not match ${c.regexp}`);
+    if (c.regexp !== undefined) {
+      // The pattern is admin-supplied and length-capped (schema/custom-field.ts).
+      // A malformed pattern is a definition error, not a 500 — surface it as a
+      // validation failure instead of letting `new RegExp` throw unhandled.
+      let re: RegExp;
+      try {
+        re = new RegExp(c.regexp);
+      } catch {
+        fail(def, `has an invalid constraint pattern`);
+        return;
+      }
+      if (!re.test(s)) fail(def, `does not match ${c.regexp}`);
+    }
   };
   const checkNum = (n: number) => {
     if (c.minValue !== undefined && n < c.minValue) fail(def, `less than minValue ${c.minValue}`);
