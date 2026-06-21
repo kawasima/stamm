@@ -287,3 +287,54 @@ describe("read authorization — the user directory does not leak email/admin PI
     await w.db.destroy();
   });
 });
+
+async function publicCommentWorld() {
+  const db = await createTestDb();
+  const ctx = makeCtx(db);
+  const config = configBehaviors(ctx);
+  const project = projectBehaviors(ctx);
+  const issues = issueBehaviors(ctx);
+  const comments = commentBehaviors(ctx);
+
+  const admin = await config.createUser({ actorId: "boot", login: "admin", email: "a@x.io", displayName: "Admin", kind: "admin" });
+  const role = await config.createRole({ actorId: admin.id, name: "Dev", permissions: ["issue.create", "comment.create"], issuesVisibility: "all" });
+  await config.createStatus({ actorId: admin.id, name: "Todo", category: "todo", sortOrder: 0 });
+  const priority = await config.createPriority({ actorId: admin.id, name: "Normal" });
+  const type = await config.createIssueType({ actorId: admin.id, name: "Bug" });
+
+  // A public project (no explicit visibility): a non-member outsider can read
+  // its issues, so the private sub-visibility on a comment is what must hide it.
+  const proj = await project.createProject({ actorId: admin.id, identifier: "open", name: "Open" });
+  const member = await config.createUser({ actorId: admin.id, login: "member", email: "m@x.io", displayName: "Member" });
+  await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: member.id, roleIds: [role.id] });
+  const outsider = await config.createUser({ actorId: admin.id, login: "outsider", email: "o@x.io", displayName: "Outsider" });
+
+  const issue = await issues.createIssue({ actorId: member.id, projectId: proj.id, issueTypeId: type.id, priorityId: priority.id, subject: "Open issue" });
+  const pub = await comments.createComment({ actorId: member.id, issueId: issue.id, body: "public note" });
+  const priv = await comments.createComment({ actorId: member.id, issueId: issue.id, body: "private note", visibility: "private" });
+
+  return { db, config, project, issues, comments, admin, member, outsider, proj, issue, pub, priv };
+}
+
+describe("read authorization — private comments are members-only within an otherwise readable issue", () => {
+  it("hides a private comment from a non-member who can read the public issue", async () => {
+    const w = await publicCommentWorld();
+    const list = await w.comments.listComments({ actorId: w.outsider.id, issueId: w.issue.id, pagination: { limit: 20 } });
+    expect(list.items.map((c) => c.id)).toContain(w.pub.id);
+    expect(list.items.map((c) => c.id)).not.toContain(w.priv.id);
+    await expect(
+      w.comments.getComment({ actorId: w.outsider.id, commentId: w.priv.id }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("shows private comments to project members and global admins", async () => {
+    const w = await publicCommentWorld();
+    const asMember = await w.comments.listComments({ actorId: w.member.id, issueId: w.issue.id, pagination: { limit: 20 } });
+    expect(asMember.items.map((c) => c.id)).toContain(w.priv.id);
+    const asAdmin = await w.comments.listComments({ actorId: w.admin.id, issueId: w.issue.id, pagination: { limit: 20 } });
+    expect(asAdmin.items.map((c) => c.id)).toContain(w.priv.id);
+    expect((await w.comments.getComment({ actorId: w.member.id, commentId: w.priv.id })).id).toBe(w.priv.id);
+    await w.db.destroy();
+  });
+});

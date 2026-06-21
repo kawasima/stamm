@@ -33,6 +33,16 @@ export async function isMember(ctx: Ctx, projectId: string, userId: string): Pro
   return row !== undefined;
 }
 
+/**
+ * Whether a viewer may see members-only ("private") content in a project:
+ * global admins and project members. Used to gate private comments, which are
+ * otherwise readable by any non-member who can see a public project's issue.
+ */
+export async function canSeePrivateInProject(ctx: Ctx, projectId: string, userId: string): Promise<boolean> {
+  if (await isGlobalAdmin(ctx, userId)) return true;
+  return isMember(ctx, projectId, userId);
+}
+
 /** The roles a user holds in a project (via the normalized membership-role join). */
 export async function rolesOf(ctx: Ctx, projectId: string, userId: string): Promise<Role[]> {
   const rows = await ctx.db

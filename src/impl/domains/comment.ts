@@ -5,7 +5,7 @@ import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue, canSeePrivateInProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type CommentMethods = "createComment" | "getComment" | "updateComment" | "deleteComment" | "listComments";
@@ -46,6 +46,14 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
     getComment: async ({ actorId, commentId }) => {
       const comment = await loadComment(commentId);
       await assertCanReadIssue(ctx, comment.issueId, actorId);
+      // A private comment is members-only; hide it (NotFound, not Forbidden) from
+      // a non-member who can otherwise read the issue. The author always sees it.
+      if (comment.visibility === "private" && comment.authorId !== actorId) {
+        const projectId = await issueProjectId(comment.issueId);
+        if (!(await canSeePrivateInProject(ctx, projectId, actorId))) {
+          throw new NotFoundError("Comment", commentId);
+        }
+      }
       return comment;
     },
 
@@ -69,6 +77,12 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       const dir: "asc" | "desc" = sortDirection === "desc" ? "desc" : "asc";
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("comments").selectAll().where("issue_id", "=", issueId);
+      // Members-only: a non-member who can read the issue still sees only public
+      // comments (plus their own). Members and global admins see everything.
+      const projectId = await issueProjectId(issueId);
+      if (!(await canSeePrivateInProject(ctx, projectId, actorId))) {
+        q = q.where((eb) => eb.or([eb("visibility", "=", "public"), eb("author_id", "=", actorId)]));
+      }
       if (cursor) {
         const sep = cursor.indexOf(" ");
         const co = cursor.slice(0, sep);
