@@ -275,4 +275,15 @@ describe("read authorization — the user directory does not leak email/admin PI
     expect(asAdmin.items.some((u) => u.email === "bob@x.io")).toBe(true);
     await w.db.destroy();
   });
+
+  // Account status (active/inactive) is intentionally readable by any
+  // authenticated caller — it's a shared collaboration signal, and the directory
+  // is already visible. This locks that decision so a future change is deliberate.
+  it("lets a non-admin read another user's account status", async () => {
+    const w = await userDirectoryWorld();
+    await w.extras.setUserStatus({ actorId: w.admin.id, userId: w.bob.id, status: "inactive" });
+    const seen = await w.extras.getUserStatus({ actorId: w.alice.id, userId: w.bob.id });
+    expect(seen.status).toBe("inactive");
+    await w.db.destroy();
+  });
 });

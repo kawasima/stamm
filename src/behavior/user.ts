@@ -84,9 +84,15 @@ export const SetUserStatus = z.function()
   }))
   .returns(z.promise(UserCategory));
 
-/** Get current status of a user */
+/**
+ * Get a user's account status (active/inactive). Readable by any authenticated
+ * caller: account status is a shared collaboration signal (e.g. don't assign
+ * work to a deactivated account), and the directory itself is already visible to
+ * members. `actorId` is carried so the read is identified and can be tightened
+ * later, but it is not gated on today.
+ */
 export const GetUserStatus = z.function()
-  .args(z.object({ userId: Id }))
+  .args(z.object({ actorId: Id.optional(), userId: Id }))
   .returns(z.promise(UserCategory));
 
 // ============================================================
