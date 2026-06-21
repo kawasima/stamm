@@ -276,6 +276,9 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       await assertCanWrite(ctx, issue.projectId, actorId, "issue.move");
       const targetProj = await db.selectFrom("projects").select("identifier").where("id", "=", targetProjectId).executeTakeFirst();
       if (!targetProj) throw new NotFoundError("Project", targetProjectId);
+      // Moving an issue INTO a project is a write there too — require move rights
+      // in the destination, not just the source.
+      await assertCanWrite(ctx, targetProjectId, actorId, "issue.move");
       let moved!: IssueT;
       await db.transaction().execute(async (trx) => {
         const maxRow = await trx

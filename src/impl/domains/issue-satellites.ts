@@ -103,6 +103,9 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     setIssueParent: async ({ actorId, childIssueId, parentIssueId }) => {
       const projectId = await issueProjectId(childIssueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      // The parent must be an issue the actor can actually see — no linking to a
+      // private issue in a project they have no access to.
+      await assertCanReadIssue(ctx, parentIssueId, actorId);
       const value = IssueParent.parse({ id: ctx.genId(), childIssueId, parentIssueId });
       await adb.transaction().execute(async (trx: any) => {
         await trx.deleteFrom("issue_parents").where("child_issue_id", "=", childIssueId).execute();
@@ -150,7 +153,9 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     watchIssue: async ({ actorId, issueId }) => {
-      await issueProjectId(issueId); // existence
+      // You may only subscribe to an issue you can actually see — otherwise a
+      // watch is both an unauthorized write and a foothold on its notifications.
+      await assertCanReadIssue(ctx, issueId, actorId);
       const existing = await db.selectFrom("issue_watchers").selectAll().where("issue_id", "=", issueId).where("user_id", "=", actorId).executeTakeFirst();
       if (existing) return watcherCodec.decode(existing);
       const w = IssueWatcher.parse({ id: ctx.genId(), issueId, userId: actorId });
@@ -171,6 +176,9 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     createIssueRelation: async ({ actorId, issueId, relatedIssueId, relationType, delay }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      // The related issue must be visible to the actor — no relating to a private
+      // issue they can't see.
+      await assertCanReadIssue(ctx, relatedIssueId, actorId);
       const relation = IssueRelation.parse({ id: ctx.genId(), issueId, relatedIssueId, relationType, delay });
       await db.insertInto("issue_relations").values(relationCodec.encode(relation) as never).execute();
       return relation;
