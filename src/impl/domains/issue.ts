@@ -346,14 +346,14 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_status_changes").selectAll().where("issue_id", "=", issueId);
       if (cursor) {
-        const sep = cursor.indexOf(" ");
+        const sep = cursor.indexOf(" ");
         const co = cursor.slice(0, sep);
         const ci = cursor.slice(sep + 1);
         q = q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]));
       }
       const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
       const items = rows.map((r) => statusChangeCodec.decode(r));
-      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
+      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
       return { items: page.items, nextCursor: page.nextCursor };
     },
 

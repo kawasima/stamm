@@ -77,4 +77,30 @@ describe("createHttpServer", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("throttles a caller that exceeds the per-IP rate limit with 429", async () => {
+    const db = await createTestDb();
+    const ctx = makeCtx(db);
+    const behaviors = createSqlBehaviors(db);
+    await ensureBootstrapped(behaviors);
+    const server = createHttpServer({ behaviors, ctx, rateLimit: { windowMs: 60_000, max: 2 } });
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as AddressInfo).port;
+
+    const hit = () =>
+      fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+
+    const first = await hit();
+    const second = await hit();
+    const third = await hit();
+    // First two are allowed (and fail auth as 401); the third trips the limiter.
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(401);
+    expect(third.status).toBe(429);
+  });
 });
