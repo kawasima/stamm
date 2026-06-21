@@ -166,11 +166,11 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         });
         const iid = issue.id;
         await trx.insertInto("issues").values(issueCodec.encode(issue) as never).execute();
-        for (const assigneeId of args.assigneeIds ?? []) {
-          await trx.insertInto("issue_assignees").values({ id: ctx.genId(), issue_id: iid, assignee_id: assigneeId }).execute();
+        if (args.assigneeIds?.length) {
+          await trx.insertInto("issue_assignees").values(args.assigneeIds.map((assigneeId) => ({ id: ctx.genId(), issue_id: iid, assignee_id: assigneeId }))).execute();
         }
-        for (const labelId of args.labelIds ?? []) {
-          await trx.insertInto("issue_labels").values({ id: ctx.genId(), issue_id: iid, label_id: labelId }).execute();
+        if (args.labelIds?.length) {
+          await trx.insertInto("issue_labels").values(args.labelIds.map((labelId) => ({ id: ctx.genId(), issue_id: iid, label_id: labelId }))).execute();
         }
         if (args.categoryId) await trx.insertInto("issue_categories").values({ id: ctx.genId(), issue_id: iid, category_id: args.categoryId }).execute();
         if (args.milestoneId) await trx.insertInto("issue_milestones").values({ id: ctx.genId(), issue_id: iid, milestone_id: args.milestoneId }).execute();
@@ -330,11 +330,13 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const transitions = (await isGlobalAdmin(ctx, actorId))
         ? await transitionsForScope(ctx, scope)
         : await availableTransitions(ctx, scope, await roleIdsOf(ctx, issue.projectId, actorId));
-      const out: { toStatusId: string; toStatusName: string }[] = [];
-      for (const t of transitions) {
-        const s = await db.selectFrom("statuses").select("name").where("id", "=", t.toStatusId).executeTakeFirst();
-        out.push({ toStatusId: t.toStatusId, toStatusName: s?.name ?? "" });
+      const toIds = [...new Set(transitions.map((t) => t.toStatusId))];
+      const names = new Map<string, string>();
+      if (toIds.length) {
+        const rows = await db.selectFrom("statuses").select(["id", "name"]).where("id", "in", toIds).execute();
+        for (const r of rows) names.set(r.id, r.name);
       }
+      const out = transitions.map((t) => ({ toStatusId: t.toStatusId, toStatusName: names.get(t.toStatusId) ?? "" }));
       return { transitions: out };
     },
 

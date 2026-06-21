@@ -77,12 +77,11 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
         );
       if (projectId) q = q.where("project_id", "=", projectId);
       const unread = await q.execute();
+      if (unread.length === 0) return { markedCount: 0 };
       const occurredAt = ctx.now();
-      await db.transaction().execute(async (trx) => {
-        for (const n of unread) {
-          await trx.insertInto("notification_reads").values({ id: ctx.genId(), notification_id: n.id, occurred_at: occurredAt }).execute();
-        }
-      });
+      // One multi-row insert rather than a statement per unread notification.
+      const rows = unread.map((n) => ({ id: ctx.genId(), notification_id: n.id, occurred_at: occurredAt }));
+      await db.insertInto("notification_reads").values(rows).execute();
       return { markedCount: unread.length };
     },
   };

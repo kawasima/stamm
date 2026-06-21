@@ -69,7 +69,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const assignees = assigneeIds.map((assigneeId) => IssueAssignee.parse({ id: ctx.genId(), issueId, assigneeId }));
       await db.transaction().execute(async (trx) => {
         await trx.deleteFrom("issue_assignees").where("issue_id", "=", issueId).execute();
-        for (const a of assignees) await trx.insertInto("issue_assignees").values(assigneeCodec.encode(a) as never).execute();
+        if (assignees.length) await trx.insertInto("issue_assignees").values(assignees.map((a) => assigneeCodec.encode(a)) as never).execute();
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "assigned", targetType: "issue", targetId: issueId });
         await notifyIssueEvent(ctx, trx as never, { projectId, issueId, authorId: actorId, eventType: "issue.assigned", title: "You were assigned", actorId, onlyRecipients: assigneeIds });
       });
@@ -82,7 +82,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const labels = labelIds.map((labelId) => IssueLabel.parse({ id: ctx.genId(), issueId, labelId }));
       await db.transaction().execute(async (trx) => {
         await trx.deleteFrom("issue_labels").where("issue_id", "=", issueId).execute();
-        for (const l of labels) await trx.insertInto("issue_labels").values(labelCodec.encode(l) as never).execute();
+        if (labels.length) await trx.insertInto("issue_labels").values(labels.map((l) => labelCodec.encode(l)) as never).execute();
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "labeled", targetType: "issue", targetId: issueId });
       });
       return { labels };
