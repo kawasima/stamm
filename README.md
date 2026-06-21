@@ -212,7 +212,7 @@ npm run http       # node dist/bin/stamm-http.js
 - `STAMM_HTTP_HOST` — listen host (default `127.0.0.1`)
 - `STAMM_HTTP_PATH` — MCP endpoint path (default `/mcp`)
 - `STAMM_JWT_ISS` / `STAMM_JWT_AUD` — optional expected `iss` / `aud` claims
-- `STAMM_SEED_KEYS_FILE` — where first-boot seed private keys are written (default `./stamm-seed-keys.json`)
+- `STAMM_SEED_KEYS_FILE` — opt-in: dump first-boot seed private keys once to this `0600` file (unset by default, so nothing is written to disk)
 
 > **Run it behind TLS.** The server speaks plain HTTP. Bearer tokens and the
 > private keys returned by `user_key_issue` are secrets — terminate TLS at a
@@ -228,10 +228,12 @@ still active. Tokens without `exp`, beyond the max age, or for a
 deleted/deactivated user are rejected. Always set `kid` so the lookup hits one
 key directly.
 
-A fresh database bootstraps an admin and a member and mints a key for each. The
-private keys are written **once** to `stamm-seed-keys.json` (mode `0600`; path
-overridable via `STAMM_SEED_KEYS_FILE`) — distribute them to their owners and
-delete the file. To mint keys for more users, an admin calls the
+A fresh database bootstraps an admin and a member and mints a key for each.
+Secure by default, those private keys are **not** written to disk — set
+`STAMM_SEED_KEYS_FILE` to dump them once to a `0600` file (then distribute and
+delete it). Without it, mint a usable admin key locally over stdio
+(`STAMM_ACTOR=<adminId> stamm-mcp`, then call `user_key_issue`); the bootstrap
+log prints the admin id. To mint keys for more users, an admin calls the
 `user_key_issue` tool (over either transport); the private key is returned
 exactly once.
 

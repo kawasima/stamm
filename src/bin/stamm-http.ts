@@ -2,6 +2,7 @@
 import { writeFileSync } from "node:fs";
 import { createSqlBehaviors, makeSqlite, migrateToLatest, makeCtx } from "../impl/index.js";
 import { ensureBootstrapped } from "../impl/bootstrap.js";
+import { reportSeedKeys } from "./seed-keys.js";
 import { createHttpServer } from "../http/server.js";
 
 /**
@@ -16,10 +17,12 @@ import { createHttpServer } from "../http/server.js";
  *   STAMM_HTTP_PATH MCP endpoint path (default /mcp)
  *   STAMM_JWT_ISS   optional expected JWT issuer
  *   STAMM_JWT_AUD   optional expected JWT audience
- *   STAMM_SEED_KEYS_FILE  where to write seeded private keys (default ./stamm-seed-keys.json)
+ *   STAMM_SEED_KEYS_FILE  opt-in: dump seeded private keys ONCE to this 0600 file
  *
  * NOTE: logging goes to stderr. On a fresh DB the seeded users' PRIVATE keys are
- * written ONCE to a 0600 file (never stderr, which can leak into system logs).
+ * written to disk ONLY when STAMM_SEED_KEYS_FILE is set (secure default: nothing
+ * is persisted, and the operator is told how to mint an admin key via stdio).
+ * Private keys are never logged, since stderr can leak into system logs.
  */
 async function main(): Promise<void> {
   const dbPath = process.env.STAMM_DB ?? "stamm.db";
@@ -30,15 +33,11 @@ async function main(): Promise<void> {
 
   const seed = await ensureBootstrapped(behaviors);
   if (seed) {
-    console.error(`[stamm] bootstrapped a fresh database (admin=${seed.adminId}, member=${seed.memberId}, project=${seed.projectId})`);
-    const keysFile = process.env.STAMM_SEED_KEYS_FILE ?? "stamm-seed-keys.json";
-    const payload = {
-      note: "Seeded signing keys — shown once. Keep these private keys secret; delete this file once distributed.",
-      admin: { userId: seed.adminId, keyId: seed.adminKey.keyId, algorithm: seed.adminKey.algorithm, privateKey: seed.adminKey.privateKey },
-      member: { userId: seed.memberId, keyId: seed.memberKey.keyId, algorithm: seed.memberKey.algorithm, privateKey: seed.memberKey.privateKey },
-    };
-    writeFileSync(keysFile, JSON.stringify(payload, null, 2), { mode: 0o600 });
-    console.error(`[stamm] wrote seeded private keys to ${keysFile} (mode 0600) — distribute and then delete it.`);
+    reportSeedKeys(seed, {
+      keysFile: process.env.STAMM_SEED_KEYS_FILE,
+      writeFile: (path, data) => writeFileSync(path, data, { mode: 0o600 }),
+      log: (msg) => console.error(`[stamm] ${msg}`),
+    });
   }
 
   const path = process.env.STAMM_HTTP_PATH ?? "/mcp";

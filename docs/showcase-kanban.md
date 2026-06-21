@@ -24,12 +24,15 @@ dragging a card calls `issue_transition`.*
 
    ```sh
    npm install && npm run build
-   npm run http        # serves MCP over http://127.0.0.1:3000/mcp
+   STAMM_SEED_KEYS_FILE=stamm-seed-keys.json npm run http   # serves MCP over http://127.0.0.1:3000/mcp
    ```
 
-   On first boot stamm seeds an admin and a member and writes their **private
-   signing keys once** to `stamm-seed-keys.json` (mode 0600). Each entry has
-   `{ userId, keyId, algorithm: "EdDSA", privateKey: <JWK> }`.
+   On first boot stamm seeds an admin and a member and mints a signing key for
+   each. Secure by default these private keys are **not** written to disk; the
+   `STAMM_SEED_KEYS_FILE` above opts into a one-time `0600` dump (handy for this
+   demo) with entries `{ userId, keyId, algorithm: "EdDSA", privateKey: <JWK> }`.
+   In production, leave it unset and mint an admin key over stdio
+   (`STAMM_ACTOR=<adminId> stamm-mcp`, then `user_key_issue`).
 
 2. For a team, mint a key per teammate. As the admin (using the admin key), call
    the `admin_create` tool to add each user and `user_key_issue` to mint their
