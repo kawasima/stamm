@@ -5,7 +5,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadProject, assertCanReadIssue, isGlobalAdmin } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type TimeMethods = "createTimeEntry" | "getTimeEntry" | "updateTimeEntry" | "deleteTimeEntry" | "listTimeEntries" | "getTimeSummary";
@@ -31,7 +31,11 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       return entry;
     },
 
-    getTimeEntry: async ({ timeEntryId }) => load(timeEntryId),
+    getTimeEntry: async ({ actorId, timeEntryId }) => {
+      const entry = await load(timeEntryId);
+      await assertCanReadProject(ctx, entry.projectId, actorId);
+      return entry;
+    },
 
     updateTimeEntry: async (args) => {
       const current = await load(args.timeEntryId);
@@ -52,13 +56,22 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
     },
 
     listTimeEntries: async (args) => {
+      // Read scoping: an issue/project filter must be one the actor can read; with
+      // neither, a non-admin is confined to their own entries (no org-wide dump).
+      const isAdmin = await isGlobalAdmin(ctx, args.actorId);
+      if (!isAdmin) {
+        if (args.issueId) await assertCanReadIssue(ctx, args.issueId, args.actorId);
+        else if (args.projectId) await assertCanReadProject(ctx, args.projectId, args.actorId);
+      }
+      const ownOnly = !isAdmin && !args.projectId && !args.issueId;
+      const effectiveUserId = ownOnly ? args.actorId : args.userId;
       const limit = args.pagination?.limit ?? 20;
       const dir: "asc" | "desc" = args.sortDirection === "desc" ? "desc" : "asc";
       const cursor = decodeCursor(args.pagination?.cursor);
       let q = db.selectFrom("time_entries").selectAll();
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
       if (args.issueId) q = q.where("issue_id", "=", args.issueId);
-      if (args.userId) q = q.where("user_id", "=", args.userId);
+      if (effectiveUserId) q = q.where("user_id", "=", effectiveUserId);
       if (args.activityId) q = q.where("activity_id", "=", args.activityId);
       if (args.spentOnFrom) q = q.where("spent_on", ">=", args.spentOnFrom);
       if (args.spentOnTo) q = q.where("spent_on", "<=", args.spentOnTo);
@@ -81,10 +94,17 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
     },
 
     getTimeSummary: async (args) => {
+      const isAdmin = await isGlobalAdmin(ctx, args.actorId);
+      if (!isAdmin) {
+        if (args.issueId) await assertCanReadIssue(ctx, args.issueId, args.actorId);
+        else if (args.projectId) await assertCanReadProject(ctx, args.projectId, args.actorId);
+      }
+      const ownOnly = !isAdmin && !args.projectId && !args.issueId;
+      const effectiveUserId = ownOnly ? args.actorId : args.userId;
       let q = db.selectFrom("time_entries");
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
       if (args.issueId) q = q.where("issue_id", "=", args.issueId);
-      if (args.userId) q = q.where("user_id", "=", args.userId);
+      if (effectiveUserId) q = q.where("user_id", "=", effectiveUserId);
       if (args.spentOnFrom) q = q.where("spent_on", ">=", args.spentOnFrom);
       if (args.spentOnTo) q = q.where("spent_on", "<=", args.spentOnTo);
 

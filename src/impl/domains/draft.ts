@@ -4,7 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { appendActivity } from "../timeline.js";
 import { issueBehaviors } from "./issue.js";
@@ -40,7 +40,11 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
       return draft;
     },
 
-    getDraftIssue: async ({ draftId }) => load(draftId),
+    getDraftIssue: async ({ actorId, draftId }) => {
+      const draft = await load(draftId);
+      await assertCanReadProject(ctx, draft.projectId, actorId);
+      return draft;
+    },
 
     updateDraftIssue: async (args) => {
       const draft = await load(args.draftId);
@@ -60,7 +64,8 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
       await db.deleteFrom("draft_issues").where("id", "=", draftId).execute();
     },
 
-    listDraftIssues: async ({ projectId, pagination }) => {
+    listDraftIssues: async ({ actorId, projectId, pagination }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("draft_issues").selectAll().where("project_id", "=", projectId);

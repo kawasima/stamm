@@ -30,11 +30,11 @@ describe("time entries", () => {
     const updated = await w.time.updateTimeEntry({ actorId: w.alice.id, timeEntryId: e.id, hours: 5 });
     expect(updated.hours).toBe(5);
 
-    const bySpentOn = await w.time.listTimeEntries({ userId: w.alice.id, sortBy: "spentOn", pagination: { limit: 20 } });
+    const bySpentOn = await w.time.listTimeEntries({ actorId: w.alice.id, userId: w.alice.id, sortBy: "spentOn", pagination: { limit: 20 } });
     expect(bySpentOn.items.map((t) => t.spentOn)).toEqual(["2026-01-01", "2026-01-02"]);
 
     await w.time.deleteTimeEntry({ actorId: w.alice.id, timeEntryId: e.id });
-    await expect(w.time.getTimeEntry({ timeEntryId: e.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.time.getTimeEntry({ actorId: w.alice.id, timeEntryId: e.id })).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });
 
@@ -43,11 +43,11 @@ describe("time entries", () => {
     await w.time.createTimeEntry({ actorId: w.alice.id, projectId: w.proj.id, userId: w.alice.id, activityId: "dev", hours: 2, spentOn: "2026-01-01" });
     await w.time.createTimeEntry({ actorId: w.alice.id, projectId: w.proj.id, userId: w.alice.id, activityId: "dev", hours: 3, spentOn: "2026-01-02" });
 
-    const byUser = await w.time.getTimeSummary({ projectId: w.proj.id, groupBy: "user" });
+    const byUser = await w.time.getTimeSummary({ actorId: w.alice.id, projectId: w.proj.id, groupBy: "user" });
     expect(byUser.totalHours).toBe(5);
     expect(byUser.groups).toEqual([{ key: w.alice.id, label: "Alice", hours: 5 }]);
 
-    const byDate = await w.time.getTimeSummary({ projectId: w.proj.id, groupBy: "date" });
+    const byDate = await w.time.getTimeSummary({ actorId: w.alice.id, projectId: w.proj.id, groupBy: "date" });
     expect(byDate.groups.map((g) => [g.key, g.hours])).toEqual([["2026-01-01", 2], ["2026-01-02", 3]]);
     await w.db.destroy();
   });

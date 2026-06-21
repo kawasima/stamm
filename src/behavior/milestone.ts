@@ -22,7 +22,7 @@ export const CreateMilestone = z.function()
 
 /** Get a milestone by ID */
 export const GetMilestone = z.function()
-  .args(z.object({ milestoneId: Id }))
+  .args(z.object({ actorId: Id, milestoneId: Id }))
   .returns(z.promise(Milestone));
 
 /** Update a milestone */
@@ -46,6 +46,7 @@ export const DeleteMilestone = z.function()
 /** List milestones in a project */
 export const ListMilestones = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     status: MilestoneStatus.optional(),
     sortBy: z.enum(["name", "dueDate", "sortOrder"]).optional(),
@@ -83,7 +84,7 @@ export const LockMilestone = z.function()
 
 /** Get milestone progress (issue counts and completion percentage) */
 export const GetMilestoneProgress = z.function()
-  .args(z.object({ milestoneId: Id }))
+  .args(z.object({ actorId: Id, milestoneId: Id }))
   .returns(z.promise(z.object({
     milestoneId: Id,
     totalIssues: z.number().int(),

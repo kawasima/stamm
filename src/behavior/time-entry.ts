@@ -56,7 +56,7 @@ export const CreateTimeEntry = z.function()
 
 /** Get a time entry by ID */
 export const GetTimeEntry = z.function()
-  .args(z.object({ timeEntryId: Id }))
+  .args(z.object({ actorId: Id, timeEntryId: Id }))
   .returns(z.promise(TimeEntry));
 
 /** Update a time entry */
@@ -79,6 +79,7 @@ export const DeleteTimeEntry = z.function()
 /** List time entries with filtering */
 export const ListTimeEntries = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id.optional(),
     issueId: Id.optional(),
     userId: Id.optional(),
@@ -98,6 +99,7 @@ export const ListTimeEntries = z.function()
 /** Time summary grouped by specified dimension */
 export const GetTimeSummary = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id.optional(),
     issueId: Id.optional(),
     userId: Id.optional(),

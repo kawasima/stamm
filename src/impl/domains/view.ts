@@ -4,7 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type ViewMethods =
@@ -29,6 +29,15 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
     return codec.decode(row);
   };
 
+  /** A view is readable when the actor can read its project, and — for a private
+   *  view — only by its owner (or a global admin). Throws NotFound otherwise. */
+  const assertCanReadView = async (view: ProjectViewT, actorId: string): Promise<void> => {
+    await assertCanReadProject(ctx, view.projectId, actorId);
+    if (view.visibility === "private" && view.ownerId !== actorId && !(await isGlobalAdmin(ctx, actorId))) {
+      throw new NotFoundError("ProjectView", view.id);
+    }
+  };
+
   return {
     createProjectView: async (args) => {
       await assertCanWrite(ctx, args.projectId, args.actorId, "view.manage");
@@ -38,7 +47,11 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
       return view;
     },
 
-    getProjectView: async ({ viewId }) => load(viewId),
+    getProjectView: async ({ actorId, viewId }) => {
+      const view = await load(viewId);
+      await assertCanReadView(view, actorId);
+      return view;
+    },
 
     updateProjectView: async (args) => {
       const view = await load(args.viewId);
@@ -61,21 +74,17 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
       });
     },
 
-    listProjectViews: async ({ projectId, ownerId, visibility, layout, pagination }) => {
+    listProjectViews: async ({ actorId, projectId, visibility, layout, pagination }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("project_views").selectAll().where("project_id", "=", projectId);
       if (layout) q = q.where("layout", "=", layout);
-      if (visibility) {
-        // explicit visibility filter overrides accessibility scoping
-        q = q.where("visibility", "=", visibility);
-      } else if (ownerId) {
-        // accessible to the viewer: shared (public) plus their own private views
-        q = q.where((eb) => eb.or([eb("visibility", "=", "public"), eb("owner_id", "=", ownerId)]));
-      } else {
-        // no viewer in scope: only shared views
-        q = q.where("visibility", "=", "public");
-      }
+      // Accessible to the viewer: shared (public) views plus the actor's own
+      // private views. A `visibility` filter narrows within that scope — it can
+      // never widen it to another user's private views.
+      q = q.where((eb) => eb.or([eb("visibility", "=", "public"), eb("owner_id", "=", actorId)]));
+      if (visibility) q = q.where("visibility", "=", visibility);
       if (cursor) q = q.where("id", ">", cursor);
       const rows = await q.orderBy("id").limit(limit + 1).execute();
       const page = buildPage(rows.map((r) => codec.decode(r)), (v) => v.id, limit);
@@ -118,7 +127,8 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
       return entry;
     },
 
-    listBoardPositions: async ({ viewId }) => {
+    listBoardPositions: async ({ actorId, viewId }) => {
+      await assertCanReadView(await load(viewId), actorId);
       const rows = await db.selectFrom("issue_board_positions").selectAll().where("view_id", "=", viewId).orderBy("position").execute();
       return { positions: rows.map((r) => posCodec.decode(r)) };
     },

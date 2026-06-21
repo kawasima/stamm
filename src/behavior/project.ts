@@ -28,12 +28,12 @@ export const CreateProject = z.function()
 
 /** Get a project by ID */
 export const GetProject = z.function()
-  .args(z.object({ projectId: Id }))
+  .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(Project));
 
 /** Get a project by its slug identifier */
 export const GetProjectByIdentifier = z.function()
-  .args(z.object({ identifier: Slug }))
+  .args(z.object({ actorId: Id, identifier: Slug }))
   // Natural-key lookup: null when no project has that identifier (not an error).
   .returns(z.promise(Project.nullable()));
 
@@ -55,6 +55,7 @@ export const DeleteProject = z.function()
 /** List projects with filtering */
 export const ListProjects = z.function()
   .args(z.object({
+    actorId: Id,
     visibility: ProjectVisibility.optional(),
     lifecycle: ProjectLifecycle.optional(),
     parentProjectId: Id.optional(),
@@ -156,6 +157,7 @@ export const RemoveProjectMember = z.function()
 /** List members of a project */
 export const ListProjectMembers = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     roleId: Id.optional(),
     pagination: PaginationParams,

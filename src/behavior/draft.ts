@@ -21,7 +21,7 @@ export const CreateDraftIssue = z.function()
 
 /** Get a draft issue by ID */
 export const GetDraftIssue = z.function()
-  .args(z.object({ draftId: Id }))
+  .args(z.object({ actorId: Id, draftId: Id }))
   .returns(z.promise(DraftIssue));
 
 /** Update a draft issue */
@@ -43,6 +43,7 @@ export const DeleteDraftIssue = z.function()
 /** List draft issues in a project */
 export const ListDraftIssues = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     pagination: PaginationParams,
   }))

@@ -24,7 +24,7 @@ export const CreateIteration = z.function()
 
 /** Get an iteration by ID */
 export const GetIteration = z.function()
-  .args(z.object({ iterationId: Id }))
+  .args(z.object({ actorId: Id, iterationId: Id }))
   .returns(z.promise(Iteration));
 
 /** Update an iteration */
@@ -47,6 +47,7 @@ export const DeleteIteration = z.function()
 /** List iterations in a project */
 export const ListIterations = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     sortBy: z.enum(["name", "startDate", "sortOrder"]).optional(),
     sortDirection: SortDirection.optional(),
@@ -78,7 +79,7 @@ export const RemoveIssueIteration = z.function()
 
 /** Get iteration progress (issue counts and completion percentage) */
 export const GetIterationProgress = z.function()
-  .args(z.object({ iterationId: Id }))
+  .args(z.object({ actorId: Id, iterationId: Id }))
   .returns(z.promise(z.object({
     iterationId: Id,
     totalIssues: z.number().int(),

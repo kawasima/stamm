@@ -31,16 +31,16 @@ describe("draft issues", () => {
   it("creates, reads, updates, lists, and deletes a draft", async () => {
     const w = await world();
     const draft = await w.drafts.createDraftIssue({ actorId: w.alice.id, projectId: w.proj.id, title: "Spike auth" });
-    expect(await w.drafts.getDraftIssue({ draftId: draft.id })).toMatchObject({ id: draft.id, title: "Spike auth", authorId: w.alice.id });
+    expect(await w.drafts.getDraftIssue({ actorId: w.alice.id, draftId: draft.id })).toMatchObject({ id: draft.id, title: "Spike auth", authorId: w.alice.id });
 
     const updated = await w.drafts.updateDraftIssue({ actorId: w.alice.id, draftId: draft.id, title: "Spike OAuth", body: "details" });
     expect(updated).toMatchObject({ title: "Spike OAuth", body: "details" });
 
-    const list = await w.drafts.listDraftIssues({ projectId: w.proj.id, pagination: { limit: 20 } });
+    const list = await w.drafts.listDraftIssues({ actorId: w.alice.id, projectId: w.proj.id, pagination: { limit: 20 } });
     expect(list.items.map((d) => d.id)).toContain(draft.id);
 
     await w.drafts.deleteDraftIssue({ actorId: w.alice.id, draftId: draft.id });
-    await expect(w.drafts.getDraftIssue({ draftId: draft.id })).rejects.toThrow();
+    await expect(w.drafts.getDraftIssue({ actorId: w.alice.id, draftId: draft.id })).rejects.toThrow();
     await w.db.destroy();
   });
 

@@ -4,7 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type MilestoneMethods =
@@ -36,7 +36,11 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
       return m;
     },
 
-    getMilestone: async ({ milestoneId }) => load(milestoneId),
+    getMilestone: async ({ actorId, milestoneId }) => {
+      const m = await load(milestoneId);
+      await assertCanReadProject(ctx, m.projectId, actorId);
+      return m;
+    },
 
     updateMilestone: async (args) => {
       const m = await load(args.milestoneId);
@@ -57,7 +61,8 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
       });
     },
 
-    listMilestones: async ({ projectId, status, pagination }) => {
+    listMilestones: async ({ actorId, projectId, status, pagination }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("milestones").selectAll().where("project_id", "=", projectId);
@@ -86,8 +91,9 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
       return save(Milestone.parse({ ...m, status: "locked" }));
     },
 
-    getMilestoneProgress: async ({ milestoneId }) => {
-      await load(milestoneId); // existence
+    getMilestoneProgress: async ({ actorId, milestoneId }) => {
+      const m = await load(milestoneId); // existence
+      await assertCanReadProject(ctx, m.projectId, actorId);
       const rows = await db
         .selectFrom("issue_milestones as im")
         .innerJoin("issues as i", "i.id", "im.issue_id")

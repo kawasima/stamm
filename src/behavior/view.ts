@@ -34,7 +34,7 @@ export const CreateProjectView = z.function()
 
 /** Get a view by ID */
 export const GetProjectView = z.function()
-  .args(z.object({ viewId: Id }))
+  .args(z.object({ actorId: Id, viewId: Id }))
   .returns(z.promise(ProjectView));
 
 /** Update a view */
@@ -62,8 +62,8 @@ export const DeleteProjectView = z.function()
 /** List views accessible in a project (shared + the viewer's own private ones) */
 export const ListProjectViews = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
-    ownerId: Id.optional(),
     visibility: ViewVisibility.optional(),
     layout: ViewLayout.optional(),
     pagination: PaginationParams,
@@ -95,6 +95,7 @@ export const MoveIssueOnBoard = z.function()
 /** List card positions for a board view */
 export const ListBoardPositions = z.function()
   .args(z.object({
+    actorId: Id,
     viewId: Id,
   }))
   .returns(z.promise(z.object({

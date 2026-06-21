@@ -41,11 +41,11 @@ describe("milestones", () => {
     expect((await w.milestones.reopenMilestone({ actorId: w.alice.id, milestoneId: m.id })).status).toBe("open");
     expect((await w.milestones.lockMilestone({ actorId: w.alice.id, milestoneId: m.id })).status).toBe("locked");
 
-    const locked = await w.milestones.listMilestones({ projectId: w.proj.id, status: "locked", pagination: { limit: 20 } });
+    const locked = await w.milestones.listMilestones({ actorId: w.alice.id, projectId: w.proj.id, status: "locked", pagination: { limit: 20 } });
     expect(locked.items.map((x) => x.id)).toEqual([m.id]);
 
     await w.milestones.deleteMilestone({ actorId: w.alice.id, milestoneId: m.id });
-    await expect(w.milestones.getMilestone({ milestoneId: m.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.milestones.getMilestone({ actorId: w.alice.id, milestoneId: m.id })).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });
 
@@ -56,10 +56,10 @@ describe("milestones", () => {
     await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "b", milestoneId: m.id });
     await w.issues.transitionIssueStatus({ actorId: w.admin.id, issueId: i1.id, toStatusId: w.done.id });
 
-    const p = await w.milestones.getMilestoneProgress({ milestoneId: m.id });
+    const p = await w.milestones.getMilestoneProgress({ actorId: w.alice.id, milestoneId: m.id });
     expect(p).toMatchObject({ totalIssues: 2, closedIssues: 1, openIssues: 1, completionPercentage: 50 });
 
-    const empty = await w.milestones.getMilestoneProgress({ milestoneId: (await w.milestones.createMilestone({ actorId: w.alice.id, projectId: w.proj.id, name: "v2" })).id });
+    const empty = await w.milestones.getMilestoneProgress({ actorId: w.alice.id, milestoneId: (await w.milestones.createMilestone({ actorId: w.alice.id, projectId: w.proj.id, name: "v2" })).id });
     expect(empty).toMatchObject({ totalIssues: 0, completionPercentage: 0 });
     await w.db.destroy();
   });
@@ -75,13 +75,13 @@ describe("iterations", () => {
     const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "x" });
     await w.sat.setIssueIteration({ actorId: w.alice.id, issueId: issue.id, iterationId: it.id });
     await w.issues.transitionIssueStatus({ actorId: w.admin.id, issueId: issue.id, toStatusId: w.done.id });
-    const p = await w.iterations.getIterationProgress({ iterationId: it.id });
+    const p = await w.iterations.getIterationProgress({ actorId: w.alice.id, iterationId: it.id });
     expect(p).toMatchObject({ totalIssues: 1, closedIssues: 1, completionPercentage: 100 });
 
-    const list = await w.iterations.listIterations({ projectId: w.proj.id, pagination: { limit: 20 } });
+    const list = await w.iterations.listIterations({ actorId: w.alice.id, projectId: w.proj.id, pagination: { limit: 20 } });
     expect(list.items).toHaveLength(1);
     await w.iterations.deleteIteration({ actorId: w.alice.id, iterationId: it.id });
-    await expect(w.iterations.getIteration({ iterationId: it.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.iterations.getIteration({ actorId: w.alice.id, iterationId: it.id })).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });
 });

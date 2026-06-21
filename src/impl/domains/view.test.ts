@@ -28,7 +28,7 @@ describe("saved views", () => {
       actorId: w.alice.id, projectId: w.proj.id, ownerId: w.alice.id, name: "My open work",
       layout: "table", filter: { query: "auth" }, columns: ["subject", "status"], visibility: "private",
     });
-    const got = await w.views.getProjectView({ viewId: v.id });
+    const got = await w.views.getProjectView({ actorId: w.alice.id, viewId: v.id });
     expect(got).toMatchObject({ name: "My open work", filter: { query: "auth" }, columns: ["subject", "status"], visibility: "private" });
     await w.db.destroy();
   });
@@ -39,7 +39,7 @@ describe("saved views", () => {
     const privAlice = await w.views.createProjectView({ actorId: w.alice.id, projectId: w.proj.id, ownerId: w.alice.id, name: "Mine", filter: {}, visibility: "private" });
     const privBob = await w.views.createProjectView({ actorId: w.alice.id, projectId: w.proj.id, ownerId: w.bob.id, name: "Bob's", filter: {}, visibility: "private" });
 
-    const seen = await w.views.listProjectViews({ projectId: w.proj.id, ownerId: w.alice.id, pagination: { limit: 50 } });
+    const seen = await w.views.listProjectViews({ projectId: w.proj.id, actorId: w.alice.id, pagination: { limit: 50 } });
     const ids = seen.items.map((v) => v.id);
     expect(ids).toContain(pubBob.id);
     expect(ids).toContain(privAlice.id);
@@ -53,7 +53,7 @@ describe("saved views", () => {
     const up = await w.views.updateProjectView({ actorId: w.alice.id, viewId: v.id, name: "V2", columns: ["status"] });
     expect(up).toMatchObject({ name: "V2", columns: ["status"] });
     await w.views.deleteProjectView({ actorId: w.alice.id, viewId: v.id });
-    await expect(w.views.getProjectView({ viewId: v.id })).rejects.toThrow();
+    await expect(w.views.getProjectView({ actorId: w.alice.id, viewId: v.id })).rejects.toThrow();
     await w.db.destroy();
   });
 });
@@ -71,12 +71,12 @@ describe("board card ordering", () => {
     await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i2", position: 2 });
     await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i3", beforeIssueId: "i2" });
 
-    const { positions } = await w.views.listBoardPositions({ viewId: w.view.id });
+    const { positions } = await w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id });
     expect(positions.map((p) => p.issueId)).toEqual(["i1", "i3", "i2"]);
 
     // re-place i1 after i2: it lands at the end
     await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1", afterIssueId: "i2" });
-    const after = await w.views.listBoardPositions({ viewId: w.view.id });
+    const after = await w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id });
     expect(after.positions.map((p) => p.issueId)).toEqual(["i3", "i2", "i1"]);
     await w.db.destroy();
   });
@@ -92,8 +92,7 @@ describe("board card ordering", () => {
     const w = await board();
     await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1", position: 1 });
     await w.views.deleteProjectView({ actorId: w.alice.id, viewId: w.view.id });
-    const { positions } = await w.views.listBoardPositions({ viewId: w.view.id });
-    expect(positions).toHaveLength(0);
+    await expect(w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id })).rejects.toThrow();
     await w.db.destroy();
   });
 });

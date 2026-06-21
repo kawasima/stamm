@@ -21,14 +21,14 @@ describe("project domain", () => {
     const { db, b } = await setup();
     const p = await b.createProject({ actorId: "u1", identifier: "proj", name: "Project One" });
     expect(p).toMatchObject({ identifier: "proj", name: "Project One" });
-    expect(await b.getProject({ projectId: p.id })).toEqual(p);
-    expect(await b.getProjectByIdentifier({ identifier: "proj" })).toEqual(p);
+    expect(await b.getProject({ actorId: "u1", projectId: p.id })).toEqual(p);
+    expect(await b.getProjectByIdentifier({ actorId: "u1", identifier: "proj" })).toEqual(p);
     await db.destroy();
   });
 
   it("getProjectByIdentifier returns null for an unknown identifier (not an error)", async () => {
     const { db, b } = await setup();
-    expect(await b.getProjectByIdentifier({ identifier: "ghost" })).toBeNull();
+    expect(await b.getProjectByIdentifier({ actorId: "u1", identifier: "ghost" })).toBeNull();
     await db.destroy();
   });
 
@@ -48,10 +48,10 @@ describe("project domain", () => {
     await b.archiveProject({ actorId: "u1", projectId: c.id });
     await b.addProjectMember({ actorId: "u1", projectId: a.id, userId: "alice", roleIds: ["r1"] });
 
-    const active = await b.listProjects({ lifecycle: "active", pagination: { limit: 20 } });
+    const active = await b.listProjects({ actorId: "u1", lifecycle: "active", pagination: { limit: 20 } });
     expect(active.items.map((p) => p.identifier)).toEqual(["a"]);
 
-    const alices = await b.listProjects({ memberUserId: "alice", pagination: { limit: 20 } });
+    const alices = await b.listProjects({ actorId: "u1", memberUserId: "alice", pagination: { limit: 20 } });
     expect(alices.items.map((p) => p.id)).toEqual([a.id]);
     await db.destroy();
   });
@@ -67,7 +67,7 @@ describe("project domain", () => {
     const updated = await b.updateProjectMember({ actorId: "u1", projectId: p.id, userId: "alice", roleIds: ["r1", "r2"] });
     expect(updated.roleIds).toEqual(["r1", "r2"]);
 
-    const members = await b.listProjectMembers({ projectId: p.id, pagination: { limit: 20 } });
+    const members = await b.listProjectMembers({ actorId: "u1", projectId: p.id, pagination: { limit: 20 } });
     expect(members.items).toHaveLength(1);
 
     await b.removeProjectMember({ actorId: "u1", projectId: p.id, userId: "alice" });
@@ -80,8 +80,8 @@ describe("project domain", () => {
     const p = await b.createProject({ actorId: "u1", identifier: "proj", name: "P" });
     await b.addProjectMember({ actorId: "u1", projectId: p.id, userId: "alice", roleIds: ["r1"] });
     await b.deleteProject({ actorId: "u1", projectId: p.id });
-    await expect(b.getProject({ projectId: p.id })).rejects.toBeInstanceOf(NotFoundError);
-    const members = await b.listProjectMembers({ projectId: p.id, pagination: { limit: 20 } });
+    await expect(b.getProject({ actorId: "u1", projectId: p.id })).rejects.toBeInstanceOf(NotFoundError);
+    const members = await b.listProjectMembers({ actorId: "u1", projectId: p.id, pagination: { limit: 20 } });
     expect(members.items).toHaveLength(0);
     await db.destroy();
   });

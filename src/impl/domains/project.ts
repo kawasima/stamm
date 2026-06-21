@@ -9,7 +9,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
-import { assertGlobalAdmin } from "../permissions.js";
+import { assertGlobalAdmin, assertCanReadProject, canReadProject, isGlobalAdmin } from "../permissions.js";
 
 type ProjectMethods =
   | "createProject" | "getProject" | "getProjectByIdentifier" | "updateProject" | "deleteProject" | "listProjects"
@@ -72,17 +72,22 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return project;
     },
 
-    getProject: async ({ projectId }) => {
+    getProject: async ({ actorId, projectId }) => {
       const row = await db.selectFrom("projects").selectAll().where("id", "=", projectId).executeTakeFirst();
       if (!row) throw new NotFoundError("Project", projectId);
+      await assertCanReadProject(ctx, projectId, actorId);
       return projectCodec.decode(row);
     },
 
-    getProjectByIdentifier: async ({ identifier }) => {
+    getProjectByIdentifier: async ({ actorId, identifier }) => {
       // A lookup by natural key: absence is an ordinary outcome (it enables
-      // get-or-create), not an error. Return null rather than throwing.
+      // get-or-create), not an error. Return null rather than throwing — and
+      // treat a private project the actor can't read as absent, so this can't be
+      // used to probe for the existence of hidden projects.
       const row = await db.selectFrom("projects").selectAll().where("identifier", "=", identifier).executeTakeFirst();
-      return row ? projectCodec.decode(row) : null;
+      if (!row) return null;
+      if (!(await canReadProject(ctx, row.id, actorId))) return null;
+      return projectCodec.decode(row);
     },
 
     updateProject: async ({ actorId, projectId, name, description }) => {
@@ -138,6 +143,22 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       if (args.query) {
         const like = `%${args.query}%`;
         q = q.where((eb) => eb.or([eb("projects.name", "like", like), eb("projects.identifier", "like", like)]));
+      }
+      // Visibility scoping: non-admins see only public projects and those they
+      // are a member of. A private project is otherwise omitted entirely.
+      if (!(await isGlobalAdmin(ctx, args.actorId))) {
+        const A = args.actorId;
+        q = q.where((eb) =>
+          eb.or([
+            eb("project_categories.visibility", "=", "public"),
+            eb.exists(
+              eb.selectFrom("project_memberships as pm")
+                .select("pm.id")
+                .whereRef("pm.project_id", "=", "projects.id")
+                .where("pm.user_id", "=", A),
+            ),
+          ]),
+        );
       }
       if (cursor) q = q.where("projects.id", ">", cursor);
 
@@ -199,7 +220,8 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       });
     },
 
-    listProjectMembers: async ({ projectId, roleId, pagination }) => {
+    listProjectMembers: async ({ actorId, projectId, roleId, pagination }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("project_memberships").selectAll().where("project_id", "=", projectId);

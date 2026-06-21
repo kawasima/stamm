@@ -104,10 +104,10 @@ describe("MCP end-to-end over a real SQL backend", () => {
   it("project_get_by_identifier reports a miss as a non-error null, and still returns the project when found", async () => {
     const w = await seededBehaviors();
     const client = await connect(w.b);
-    const miss = await client.callTool({ name: "project_get_by_identifier", arguments: { identifier: "ghost" } });
+    const miss = await client.callTool({ name: "project_get_by_identifier", arguments: { actorId: w.admin.id, identifier: "ghost" } });
     expect(miss.isError).toBeFalsy();
     expect(miss.structuredContent).toBeUndefined();
-    const hit = await client.callTool({ name: "project_get_by_identifier", arguments: { identifier: "proj" } });
+    const hit = await client.callTool({ name: "project_get_by_identifier", arguments: { actorId: w.admin.id, identifier: "proj" } });
     expect(hit.isError).toBeFalsy();
     expect((hit.structuredContent as { identifier: string }).identifier).toBe("proj");
   });

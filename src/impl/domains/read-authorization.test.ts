@@ -8,6 +8,11 @@ import { issueBehaviors } from "./issue.js";
 import { commentBehaviors } from "./comment.js";
 import { attachmentBehaviors } from "./attachment.js";
 import { issueSatelliteBehaviors } from "./issue-satellites.js";
+import { milestoneBehaviors } from "./milestone.js";
+import { iterationBehaviors } from "./iteration.js";
+import { draftBehaviors } from "./draft.js";
+import { viewBehaviors } from "./view.js";
+import { timeEntryBehaviors } from "./time-entry.js";
 
 /**
  * Read scoping for everything that hangs off an issue. A non-member must not be
@@ -109,6 +114,89 @@ describe("read authorization — issue satellites are hidden from non-members of
     expect(att.items.length).toBe(1);
     const watchers = await w.sat.listIssueWatchers({ actorId: w.member.id, issueId: w.issue.id });
     expect(Array.isArray(watchers.watchers)).toBe(true);
+    await w.db.destroy();
+  });
+});
+
+async function projectWorld() {
+  const db = await createTestDb();
+  const ctx = makeCtx(db);
+  const config = configBehaviors(ctx);
+  const project = projectBehaviors(ctx);
+  const milestones = milestoneBehaviors(ctx);
+  const iterations = iterationBehaviors(ctx);
+  const drafts = draftBehaviors(ctx);
+  const views = viewBehaviors(ctx);
+  const time = timeEntryBehaviors(ctx);
+
+  const admin = await config.createUser({ actorId: "boot", login: "admin", email: "a@x.io", displayName: "Admin", kind: "admin" });
+  const role = await config.createRole({ actorId: admin.id, name: "Dev", permissions: ["milestone.manage", "iteration.manage", "issue.create", "view.manage"], issuesVisibility: "all" });
+  const proj = await project.createProject({ actorId: admin.id, identifier: "secret", name: "Secret" });
+  await project.setProjectVisibility({ actorId: admin.id, projectId: proj.id, visibility: "private" });
+  const member = await config.createUser({ actorId: admin.id, login: "member", email: "mem@x.io", displayName: "Member" });
+  await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: member.id, roleIds: [role.id] });
+  const outsider = await config.createUser({ actorId: admin.id, login: "outsider", email: "out@x.io", displayName: "Outsider" });
+
+  const milestone = await milestones.createMilestone({ actorId: admin.id, projectId: proj.id, name: "M1" });
+  const iteration = await iterations.createIteration({ actorId: admin.id, projectId: proj.id, name: "Sprint 1", startDate: "2026-06-01", endDate: "2026-06-14" });
+  const draft = await drafts.createDraftIssue({ actorId: admin.id, projectId: proj.id, title: "secret draft" });
+  const view = await views.createProjectView({ actorId: admin.id, projectId: proj.id, name: "V", layout: "board", ownerId: admin.id, visibility: "private", filter: {} });
+
+  return { db, config, project, milestones, iterations, drafts, views, time, admin, member, outsider, proj, milestone, iteration, draft, view };
+}
+
+describe("read authorization — project-scoped resources are hidden from non-members of a private project", () => {
+  it("forbids an outsider from reading milestones", async () => {
+    const w = await projectWorld();
+    await expect(w.milestones.getMilestone({ actorId: w.outsider.id, milestoneId: w.milestone.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.milestones.listMilestones({ actorId: w.outsider.id, projectId: w.proj.id, pagination: { limit: 20 } })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.milestones.getMilestoneProgress({ actorId: w.outsider.id, milestoneId: w.milestone.id })).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("forbids an outsider from reading iterations", async () => {
+    const w = await projectWorld();
+    await expect(w.iterations.getIteration({ actorId: w.outsider.id, iterationId: w.iteration.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.iterations.listIterations({ actorId: w.outsider.id, projectId: w.proj.id, pagination: { limit: 20 } })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.iterations.getIterationProgress({ actorId: w.outsider.id, iterationId: w.iteration.id })).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("forbids an outsider from reading drafts", async () => {
+    const w = await projectWorld();
+    await expect(w.drafts.getDraftIssue({ actorId: w.outsider.id, draftId: w.draft.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.drafts.listDraftIssues({ actorId: w.outsider.id, projectId: w.proj.id, pagination: { limit: 20 } })).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("forbids an outsider from reading time entries and summaries of a private project", async () => {
+    const w = await projectWorld();
+    await expect(w.time.listTimeEntries({ actorId: w.outsider.id, projectId: w.proj.id, pagination: { limit: 20 } })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.time.getTimeSummary({ actorId: w.outsider.id, projectId: w.proj.id, groupBy: "user" })).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("forbids an outsider from reading the project, its members, and its views", async () => {
+    const w = await projectWorld();
+    await expect(w.project.getProject({ actorId: w.outsider.id, projectId: w.proj.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.project.listProjectMembers({ actorId: w.outsider.id, projectId: w.proj.id, pagination: { limit: 20 } })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.views.getProjectView({ actorId: w.outsider.id, viewId: w.view.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(w.views.listBoardPositions({ actorId: w.outsider.id, viewId: w.view.id })).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("omits a private project from an outsider's project listing", async () => {
+    const w = await projectWorld();
+    const list = await w.project.listProjects({ actorId: w.outsider.id, pagination: { limit: 50 } });
+    expect(list.items.map((p) => p.id)).not.toContain(w.proj.id);
+    await w.db.destroy();
+  });
+
+  it("lets a member read project-scoped resources", async () => {
+    const w = await projectWorld();
+    expect((await w.milestones.listMilestones({ actorId: w.member.id, projectId: w.proj.id, pagination: { limit: 20 } })).items.length).toBe(1);
+    expect((await w.drafts.listDraftIssues({ actorId: w.member.id, projectId: w.proj.id, pagination: { limit: 20 } })).items.length).toBe(1);
+    expect((await w.project.listProjects({ actorId: w.member.id, pagination: { limit: 50 } })).items.map((p) => p.id)).toContain(w.proj.id);
     await w.db.destroy();
   });
 });

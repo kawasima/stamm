@@ -4,7 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanWrite, assertCanReadProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type IterationMethods =
@@ -28,7 +28,11 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
       return it;
     },
 
-    getIteration: async ({ iterationId }) => load(iterationId),
+    getIteration: async ({ actorId, iterationId }) => {
+      const it = await load(iterationId);
+      await assertCanReadProject(ctx, it.projectId, actorId);
+      return it;
+    },
 
     updateIteration: async (args) => {
       const it = await load(args.iterationId);
@@ -51,7 +55,8 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
       });
     },
 
-    listIterations: async ({ projectId, pagination }) => {
+    listIterations: async ({ actorId, projectId, pagination }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("iterations").selectAll().where("project_id", "=", projectId);
@@ -61,8 +66,9 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    getIterationProgress: async ({ iterationId }) => {
-      await load(iterationId);
+    getIterationProgress: async ({ actorId, iterationId }) => {
+      const it = await load(iterationId);
+      await assertCanReadProject(ctx, it.projectId, actorId);
       const rows = await db
         .selectFrom("issue_iterations as ii")
         .innerJoin("issues as i", "i.id", "ii.issue_id")
