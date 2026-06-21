@@ -15,7 +15,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
-import { assertGlobalAdmin } from "../permissions.js";
+import { assertGlobalAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
 
 interface Paginated<T> {
   items: T[];
@@ -41,6 +41,13 @@ interface CrudDef<S extends z.ZodTypeAny> {
    * stay open so members can resolve statuses/labels/roles for normal work.
    */
   writeGuard?: (ctx: Ctx, args: Record<string, unknown>) => Promise<void>;
+  /**
+   * Reduce a row before it leaves a read (get/list). Returns a per-call mapper
+   * so any viewer lookup (e.g. "is the actor an admin?") happens once, not per
+   * row. Used by `users` to drop email from non-admin readers; other resources
+   * leave it unset and return rows verbatim.
+   */
+  readProjection?: (ctx: Ctx, args: Record<string, unknown>) => Promise<(row: z.infer<S>) => z.infer<S>>;
 }
 
 /**
@@ -68,7 +75,9 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
     const id = args[def.idArg] as string;
     const row = await db.selectFrom(def.table).selectAll().where("id", "=", id).executeTakeFirst();
     if (!row) throw new NotFoundError(def.entityName, id);
-    return codec.decode(row);
+    const entity = codec.decode(row);
+    if (def.readProjection) return (await def.readProjection(ctx, args))(entity);
+    return entity;
   };
 
   const update = async (args: Record<string, unknown>): Promise<R> => {
@@ -103,7 +112,12 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
     }
     if (cursor) q = q.where("id", ">", cursor);
     const rows = await q.orderBy("id").limit(limit + 1).execute();
-    const page = buildPage(rows.map((r) => codec.decode(r)), (e) => (e as { id: string }).id, limit);
+    let items = rows.map((r) => codec.decode(r));
+    if (def.readProjection) {
+      const project = await def.readProjection(ctx, args);
+      items = items.map(project);
+    }
+    const page = buildPage(items, (e) => (e as { id: string }).id, limit);
     return { items: page.items, nextCursor: page.nextCursor };
   };
 
@@ -137,7 +151,15 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
     if (!anyUser) return;
     await assertGlobalAdmin(c, args.actorId as string);
   };
-  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard });
+  // Users ride the generic read path like the other config resources, but their
+  // rows carry email/admin-flag PII, so reads project the row down for anyone who
+  // is not a global admin (and not looking at their own record).
+  const userReadProjection = async (c: Ctx, args: Record<string, unknown>) => {
+    const viewerId = args.actorId as string | undefined;
+    const viewerIsAdmin = viewerId !== undefined && (await isGlobalAdmin(c, viewerId));
+    return (u: z.infer<typeof User>) => projectUser(u, viewerId, viewerIsAdmin) as z.infer<typeof User>;
+  };
+  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection });
   const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup" });
 
   return {

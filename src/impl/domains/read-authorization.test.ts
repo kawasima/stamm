@@ -3,6 +3,7 @@ import { NotFoundError } from "../errors.js";
 import { createTestDb } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { configBehaviors } from "./config.js";
+import { userExtraBehaviors } from "./user-extras.js";
 import { projectBehaviors } from "./project.js";
 import { issueBehaviors } from "./issue.js";
 import { commentBehaviors } from "./comment.js";
@@ -197,6 +198,81 @@ describe("read authorization — project-scoped resources are hidden from non-me
     expect((await w.milestones.listMilestones({ actorId: w.member.id, projectId: w.proj.id, pagination: { limit: 20 } })).items.length).toBe(1);
     expect((await w.drafts.listDraftIssues({ actorId: w.member.id, projectId: w.proj.id, pagination: { limit: 20 } })).items.length).toBe(1);
     expect((await w.project.listProjects({ actorId: w.member.id, pagination: { limit: 50 } })).items.map((p) => p.id)).toContain(w.proj.id);
+    await w.db.destroy();
+  });
+});
+
+async function userDirectoryWorld() {
+  const db = await createTestDb();
+  const ctx = makeCtx(db);
+  const config = configBehaviors(ctx);
+  const extras = userExtraBehaviors(ctx);
+
+  const admin = await config.createUser({ actorId: "boot", login: "admin", email: "admin@x.io", displayName: "Admin", kind: "admin" });
+  const alice = await config.createUser({ actorId: admin.id, login: "alice", email: "alice@x.io", displayName: "Alice" });
+  const bob = await config.createUser({ actorId: admin.id, login: "bob", email: "bob@x.io", displayName: "Bob" });
+  const group = await config.createUserGroup({ actorId: admin.id, name: "Team" });
+  await extras.addGroupMember({ actorId: admin.id, groupId: group.id, userId: alice.id });
+  await extras.addGroupMember({ actorId: admin.id, groupId: group.id, userId: bob.id });
+
+  return { db, config, extras, admin, alice, bob, group };
+}
+
+describe("read authorization — the user directory does not leak email/admin PII to non-admins", () => {
+  it("omits email when a non-admin reads another user, but keeps login/displayName/kind", async () => {
+    const w = await userDirectoryWorld();
+    const seen = await w.config.getUser({ actorId: w.alice.id, userId: w.bob.id });
+    expect(seen.email).toBeUndefined();
+    expect(seen.login).toBe("bob");
+    expect(seen.displayName).toBe("Bob");
+    expect(seen.kind).toBe("regular");
+    await w.db.destroy();
+  });
+
+  it("returns email to a global admin", async () => {
+    const w = await userDirectoryWorld();
+    const seen = await w.config.getUser({ actorId: w.admin.id, userId: w.bob.id });
+    expect(seen.email).toBe("bob@x.io");
+    await w.db.destroy();
+  });
+
+  it("lets a user read their own email", async () => {
+    const w = await userDirectoryWorld();
+    const seen = await w.config.getUser({ actorId: w.alice.id, userId: w.alice.id });
+    expect(seen.email).toBe("alice@x.io");
+    await w.db.destroy();
+  });
+
+  it("strips other users' email from a non-admin's listing but keeps the viewer's own", async () => {
+    const w = await userDirectoryWorld();
+    const list = await w.config.listUsers({ actorId: w.alice.id, pagination: { limit: 50 } });
+    expect(list.items.find((u) => u.login === "bob")?.email).toBeUndefined();
+    expect(list.items.find((u) => u.login === "admin")?.email).toBeUndefined();
+    expect(list.items.find((u) => u.login === "alice")?.email).toBe("alice@x.io");
+    await w.db.destroy();
+  });
+
+  it("keeps email in a global admin's user listing", async () => {
+    const w = await userDirectoryWorld();
+    const list = await w.config.listUsers({ actorId: w.admin.id, pagination: { limit: 50 } });
+    expect(list.items.find((u) => u.login === "bob")?.email).toBe("bob@x.io");
+    await w.db.destroy();
+  });
+
+  it("strips email when no viewer identifies itself (least privilege)", async () => {
+    const w = await userDirectoryWorld();
+    const list = await w.config.listUsers({ pagination: { limit: 50 } });
+    expect(list.items.every((u) => u.email === undefined)).toBe(true);
+    await w.db.destroy();
+  });
+
+  it("omits email from group member listings for a non-admin but keeps it for an admin", async () => {
+    const w = await userDirectoryWorld();
+    const asMember = await w.extras.listGroupMembers({ actorId: w.alice.id, groupId: w.group.id, pagination: { limit: 50 } });
+    expect(asMember.items.length).toBe(2);
+    expect(asMember.items.find((u) => u.login === "bob")?.email).toBeUndefined();
+    const asAdmin = await w.extras.listGroupMembers({ actorId: w.admin.id, groupId: w.group.id, pagination: { limit: 50 } });
+    expect(asAdmin.items.some((u) => u.email === "bob@x.io")).toBe(true);
     await w.db.destroy();
   });
 });

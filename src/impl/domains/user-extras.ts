@@ -3,7 +3,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertGlobalAdmin } from "../permissions.js";
+import { assertGlobalAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type UserExtraMethods = "setUserStatus" | "getUserStatus" | "addGroupMember" | "removeGroupMember" | "listGroupMembers";
@@ -45,7 +45,7 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
       if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError("GroupMembership", `${groupId}/${userId}`);
     },
 
-    listGroupMembers: async ({ groupId, pagination }) => {
+    listGroupMembers: async ({ actorId, groupId, pagination }) => {
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db
@@ -55,7 +55,11 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
         .where("gm.group_id", "=", groupId);
       if (cursor) q = q.where("u.id", ">", cursor);
       const rows = await q.orderBy("u.id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => userCodec.decode(r)), (u) => u.id, limit);
+      // Members carry email PII; drop it for any reader who is not a global admin
+      // (and not themselves), mirroring the user directory read projection.
+      const viewerIsAdmin = actorId !== undefined && (await isGlobalAdmin(ctx, actorId));
+      const items = rows.map((r) => projectUser(userCodec.decode(r), actorId, viewerIsAdmin));
+      const page = buildPage(items, (u) => u.id, limit);
       return { items: page.items, nextCursor: page.nextCursor };
     },
   };

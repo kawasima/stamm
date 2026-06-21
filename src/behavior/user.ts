@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Id, PaginationParams } from "../schema/common.js";
 import {
   User,
+  PublicUser,
   UserCategory,
   UserKind,
   UserStatus,
@@ -27,10 +28,11 @@ export const CreateUser = z.function()
   }))
   .returns(z.promise(User));
 
-/** Get a user by ID */
+/** Get a user by ID. `email` is returned only to a global admin or the user
+ *  themselves; pass `actorId` to be recognized. */
 export const GetUser = z.function()
-  .args(z.object({ userId: Id }))
-  .returns(z.promise(User));
+  .args(z.object({ actorId: Id.optional(), userId: Id }))
+  .returns(z.promise(PublicUser));
 
 /** Get a user by login name */
 export const GetUserByLogin = z.function()
@@ -55,9 +57,11 @@ export const DeleteUser = z.function()
   .args(z.object({ actorId: Id, userId: Id }))
   .returns(z.promise(z.void()));
 
-/** List users with filtering and pagination */
+/** List users with filtering and pagination. `email` is included only for a
+ *  global admin viewer (pass `actorId`); other callers get the public projection. */
 export const ListUsers = z.function()
   .args(z.object({
+    actorId: Id.optional(),
     status: UserStatus.optional(),
     kind: UserKind.optional(),
     query: z.string().optional(),
@@ -65,7 +69,7 @@ export const ListUsers = z.function()
     sortDirection: SortDirection.optional(),
     pagination: PaginationParams,
   }))
-  .returns(z.promise(PaginatedResult(User)));
+  .returns(z.promise(PaginatedResult(PublicUser)));
 
 // ============================================================
 // User Status (Activate / Deactivate)
@@ -145,10 +149,12 @@ export const RemoveGroupMember = z.function()
   }))
   .returns(z.promise(z.void()));
 
-/** List members of a group */
+/** List members of a group. `email` is included only for a global admin viewer
+ *  (pass `actorId`); other callers get the public projection. */
 export const ListGroupMembers = z.function()
   .args(z.object({
+    actorId: Id.optional(),
     groupId: Id,
     pagination: PaginationParams,
   }))
-  .returns(z.promise(PaginatedResult(User)));
+  .returns(z.promise(PaginatedResult(PublicUser)));

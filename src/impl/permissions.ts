@@ -1,4 +1,4 @@
-import { Role, type Permission } from "../schema/index.js";
+import { Role, type Permission, type User, type PublicUser } from "../schema/index.js";
 import type { Ctx } from "./ctx.js";
 import { ForbiddenError, NotFoundError } from "./errors.js";
 import { makeCodec } from "./db/codec.js";
@@ -8,6 +8,19 @@ const roleCodec = makeCodec(Role, { json: ["permissions"] });
 export async function isGlobalAdmin(ctx: Ctx, userId: string): Promise<boolean> {
   const row = await ctx.db.selectFrom("users").select("kind").where("id", "=", userId).executeTakeFirst();
   return row?.kind === "admin";
+}
+
+/**
+ * Drop `email` from a user row unless the viewer is allowed to see it. A viewer
+ * may see an address only when they are a global admin or it is their own row;
+ * everyone else (including an absent/unknown viewer) gets the public projection.
+ * `viewerIsAdmin` is resolved once by the caller so a list doesn't re-query per
+ * row. `kind` is deliberately kept — see {@link PublicUser}.
+ */
+export function projectUser(user: User, viewerId: string | undefined, viewerIsAdmin: boolean): PublicUser {
+  if (viewerIsAdmin || (viewerId !== undefined && viewerId === user.id)) return user;
+  const { email: _email, ...rest } = user;
+  return rest;
 }
 
 export async function isMember(ctx: Ctx, projectId: string, userId: string): Promise<boolean> {

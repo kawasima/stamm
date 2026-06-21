@@ -54,6 +54,14 @@ export const User = Resource.extend({
   kind: UserKind.default("regular"),
 });
 
+/**
+ * User as exposed on read paths. `email` is dropped to a viewer who is not a
+ * global admin (and not the user themselves), so the shared directory can't be
+ * scraped for every member's address. `kind` is kept: knowing who the admins
+ * are is a legitimate signal for routing config requests.
+ */
+export const PublicUser = User.extend({ email: EmailAddress.optional() });
+
 export const UserStatus = z.enum(["active", "inactive"]);
 
 export const UserCategory = Resource.extend({
@@ -71,6 +79,7 @@ export type IssuesVisibility = z.infer<typeof IssuesVisibility>;
 export type Role = z.infer<typeof Role>;
 export type UserKind = z.infer<typeof UserKind>;
 export type User = z.infer<typeof User>;
+export type PublicUser = z.infer<typeof PublicUser>;
 export type UserStatus = z.infer<typeof UserStatus>;
 export type UserCategory = z.infer<typeof UserCategory>;
 export type UserGroup = z.infer<typeof UserGroup>;
