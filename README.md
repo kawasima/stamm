@@ -212,7 +212,7 @@ npm run http       # node dist/bin/stamm-http.js
 - `STAMM_HTTP_HOST` — listen host (default `127.0.0.1`)
 - `STAMM_HTTP_PATH` — MCP endpoint path (default `/mcp`)
 - `STAMM_JWT_ISS` / `STAMM_JWT_AUD` — optional expected `iss` / `aud` claims
-- `STAMM_SEED_KEYS_FILE` — opt-in: dump first-boot seed private keys once to this `0600` file (unset by default, so nothing is written to disk)
+- `STAMM_SEED_KEYS_FILE` — opt-in: on a fresh database, mint seed keys and dump their private halves once to this new `0600` file (an existing file is refused). Unset by default, so no seed key is minted and nothing is written to disk
 
 > **Run it behind TLS.** The server speaks plain HTTP. Bearer tokens and the
 > private keys returned by `user_key_issue` are secrets — terminate TLS at a
@@ -228,12 +228,14 @@ still active. Tokens without `exp`, beyond the max age, or for a
 deleted/deactivated user are rejected. Always set `kid` so the lookup hits one
 key directly.
 
-A fresh database bootstraps an admin and a member and mints a key for each.
-Secure by default, those private keys are **not** written to disk — set
-`STAMM_SEED_KEYS_FILE` to dump them once to a `0600` file (then distribute and
-delete it). Without it, mint a usable admin key locally over stdio
-(`STAMM_ACTOR=<adminId> stamm-mcp`, then call `user_key_issue`); the bootstrap
-log prints the admin id. To mint keys for more users, an admin calls the
+A fresh database bootstraps an admin and a member. Secure by default, no
+signing key is minted for them and nothing is written to disk. Set
+`STAMM_SEED_KEYS_FILE` to mint a key for each and dump the private keys once to
+a new `0600` file (then distribute and delete it); if that file cannot be
+written, the keys are revoked. Without it, mint a usable admin key locally over
+stdio against the same database (`STAMM_DB=<db> STAMM_ACTOR=<adminId> npm run mcp`,
+then call `user_key_issue`); the bootstrap log prints this command with the
+admin id and database path filled in. To mint keys for more users, an admin calls the
 `user_key_issue` tool (over either transport); the private key is returned
 exactly once.
 

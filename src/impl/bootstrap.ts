@@ -8,9 +8,6 @@ export interface BootstrapResult {
   issueTypeId: string;
   priorityId: string;
   statusIds: { todo: string; inProgress: string; done: string };
-  /** Signing keys minted for the seeded users — the private keys are shown ONCE. */
-  adminKey: IssuedCredential;
-  memberKey: IssuedCredential;
   /** True when this call actually seeded (the DB was empty). */
   seeded: boolean;
 }
@@ -32,6 +29,10 @@ const MEMBER_PERMISSIONS = [
  *
  * The seed runs as the internal admin; the SERVED identity is the (non-admin)
  * member, so the permission/visibility checks are live for normal operation.
+ *
+ * No signing keys are minted here: a key whose private half nobody holds is an
+ * active credential with no owner. Use issueSeedKeys when the caller has a
+ * place to hand the private keys to.
  */
 export async function ensureBootstrapped(b: Behaviors): Promise<BootstrapResult | null> {
   const existing = await b.listUsers({ pagination: { limit: 1 } });
@@ -64,12 +65,6 @@ export async function ensureBootstrapped(b: Behaviors): Promise<BootstrapResult 
   });
   await b.setDefaultStatus({ actorId: admin.id, projectId: project.id, issueTypeId: issueType.id, statusId: todo.id });
 
-  // Mint signing keys so HTTP login works out of the box. actorId is the real
-  // admin (a "system" actor would fail assertGlobalAdmin). Private keys are
-  // returned here once — the entry point prints them for the operator to keep.
-  const adminKey = await b.issueUserKey({ actorId: admin.id, userId: admin.id });
-  const memberKey = await b.issueUserKey({ actorId: admin.id, userId: member.id });
-
   return {
     adminId: admin.id,
     memberId: member.id,
@@ -77,8 +72,28 @@ export async function ensureBootstrapped(b: Behaviors): Promise<BootstrapResult 
     issueTypeId: issueType.id,
     priorityId: priority.id,
     statusIds: { todo: todo.id, inProgress: inProgress.id, done: done.id },
-    adminKey,
-    memberKey,
     seeded: true,
   };
+}
+
+export interface SeedKeys {
+  adminKey: IssuedCredential;
+  memberKey: IssuedCredential;
+}
+
+/**
+ * Mint a signing key for the seeded admin and member. The private keys are
+ * returned once. actorId is the real admin (a "system" actor would fail
+ * assertGlobalAdmin).
+ */
+export async function issueSeedKeys(b: Behaviors, seed: Pick<BootstrapResult, "adminId" | "memberId">): Promise<SeedKeys> {
+  const adminKey = await b.issueUserKey({ actorId: seed.adminId, userId: seed.adminId });
+  const memberKey = await b.issueUserKey({ actorId: seed.adminId, userId: seed.memberId });
+  return { adminKey, memberKey };
+}
+
+/** Revoke keys minted by issueSeedKeys (e.g. when they could not be handed over). */
+export async function revokeSeedKeys(b: Behaviors, seed: Pick<BootstrapResult, "adminId" | "memberId">, keys: SeedKeys): Promise<void> {
+  await b.revokeUserKey({ actorId: seed.adminId, userId: seed.adminId, keyId: keys.adminKey.keyId });
+  await b.revokeUserKey({ actorId: seed.adminId, userId: seed.memberId, keyId: keys.memberKey.keyId });
 }

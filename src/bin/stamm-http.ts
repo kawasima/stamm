@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { writeFileSync } from "node:fs";
 import { createSqlBehaviors, makeSqlite, migrateToLatest, makeCtx } from "../impl/index.js";
-import { ensureBootstrapped } from "../impl/bootstrap.js";
-import { reportSeedKeys } from "./seed-keys.js";
+import { ensureBootstrapped, issueSeedKeys, revokeSeedKeys } from "../impl/bootstrap.js";
+import { reportSeedKeys, writeSecretFile } from "./seed-keys.js";
 import { createHttpServer } from "../http/server.js";
 
 /**
@@ -17,12 +16,13 @@ import { createHttpServer } from "../http/server.js";
  *   STAMM_HTTP_PATH MCP endpoint path (default /mcp)
  *   STAMM_JWT_ISS   optional expected JWT issuer
  *   STAMM_JWT_AUD   optional expected JWT audience
- *   STAMM_SEED_KEYS_FILE  opt-in: dump seeded private keys ONCE to this 0600 file
+ *   STAMM_SEED_KEYS_FILE  opt-in: on a fresh DB, mint seed keys and dump them
+ *                   ONCE to this new 0600 file (an existing file is refused)
  *
- * NOTE: logging goes to stderr. On a fresh DB the seeded users' PRIVATE keys are
- * written to disk ONLY when STAMM_SEED_KEYS_FILE is set (secure default: nothing
- * is persisted, and the operator is told how to mint an admin key via stdio).
- * Private keys are never logged, since stderr can leak into system logs.
+ * NOTE: logging goes to stderr. Without STAMM_SEED_KEYS_FILE no seed keys are
+ * minted, and the operator is told how to mint an admin key via stdio. If the
+ * dump fails, the minted keys are revoked. Private keys are never logged, since
+ * stderr can leak into system logs.
  */
 async function main(): Promise<void> {
   const dbPath = process.env.STAMM_DB ?? "stamm.db";
@@ -33,9 +33,12 @@ async function main(): Promise<void> {
 
   const seed = await ensureBootstrapped(behaviors);
   if (seed) {
-    reportSeedKeys(seed, {
+    await reportSeedKeys(seed, {
       keysFile: process.env.STAMM_SEED_KEYS_FILE,
-      writeFile: (path, data) => writeFileSync(path, data, { mode: 0o600 }),
+      dbPath,
+      issueKeys: () => issueSeedKeys(behaviors, seed),
+      revokeKeys: (keys) => revokeSeedKeys(behaviors, seed, keys),
+      writeFile: writeSecretFile,
       log: (msg) => console.error(`[stamm] ${msg}`),
     });
   }

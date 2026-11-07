@@ -25,6 +25,17 @@ describe("ensureBootstrapped", () => {
     await db.destroy();
   });
 
+  it("mints no signing keys on its own", async () => {
+    const db = await createTestDb();
+    const b = createSqlBehaviors(db);
+    const seed = await ensureBootstrapped(b);
+    for (const userId of [seed!.adminId, seed!.memberId]) {
+      const listed = await b.listUserKeys({ actorId: seed!.adminId, userId });
+      expect(listed.items).toHaveLength(0);
+    }
+    await db.destroy();
+  });
+
   it("is idempotent: a second call does nothing", async () => {
     const db = await createTestDb();
     const b = createSqlBehaviors(db);

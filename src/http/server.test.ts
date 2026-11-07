@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createSqlBehaviors, makeCtx } from "../impl/index.js";
 import { createTestDb } from "../impl/test-db.js";
-import { ensureBootstrapped } from "../impl/bootstrap.js";
+import { ensureBootstrapped, issueSeedKeys } from "../impl/bootstrap.js";
 import type { IssuedCredential } from "../schema/index.js";
 import { createHttpServer } from "./server.js";
 
@@ -24,11 +24,12 @@ async function start() {
   const behaviors = createSqlBehaviors(db);
   const seed = await ensureBootstrapped(behaviors);
   if (!seed) throw new Error("expected a fresh seed");
+  const keys = await issueSeedKeys(behaviors, seed);
   const server = createHttpServer({ behaviors, ctx });
   servers.push(server);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   const port = (server.address() as AddressInfo).port;
-  return { port, seed };
+  return { port, seed, keys };
 }
 
 async function tokenFor(userId: string, key: IssuedCredential): Promise<string> {
@@ -53,17 +54,17 @@ async function connect(port: number, token: string): Promise<Client> {
 
 describe("createHttpServer", () => {
   it("authenticates and pins the actor to the token subject", async () => {
-    const { port, seed } = await start();
+    const { port, seed, keys } = await start();
 
     // Admin token → admin-only tool succeeds.
-    const adminClient = await connect(port, await tokenFor(seed.adminId, seed.adminKey));
+    const adminClient = await connect(port, await tokenFor(seed.adminId, keys.adminKey));
     const adminResult = await adminClient.callTool({ name: "user_key_list", arguments: { userId: seed.adminId } });
     expect(adminResult.isError).toBeFalsy();
     expect((adminResult.structuredContent as { items: unknown[] }).items.length).toBeGreaterThanOrEqual(1);
 
     // Member token → same admin-only tool is forbidden, proving the actor is the
     // member (not a shared/leaked identity).
-    const memberClient = await connect(port, await tokenFor(seed.memberId, seed.memberKey));
+    const memberClient = await connect(port, await tokenFor(seed.memberId, keys.memberKey));
     const memberResult = await memberClient.callTool({ name: "user_key_list", arguments: { userId: seed.memberId } });
     expect(memberResult.isError).toBe(true);
   });
