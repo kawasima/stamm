@@ -158,6 +158,12 @@ export const TransitionIssueStatus = z.function()
     actorId: Id,
     issueId: Id,
     toStatusId: Id,
+    /**
+     * The status the caller last saw. When given and the issue has since moved,
+     * the call fails with a ConflictError instead of transitioning from an
+     * unexpected state. Omit to transition from whatever the current status is.
+     */
+    expectedStatusId: Id.optional(),
   }))
   .returns(z.promise(Issue));
 

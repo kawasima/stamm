@@ -15,7 +15,7 @@ import { IssueStatusChange, IssueScheduleChange, IssueEstimationChange } from ".
 import type { Issue as IssueT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { ForbiddenError, NotFoundError } from "../errors.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { sql } from "kysely";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
@@ -239,8 +239,19 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         if (args[f] !== undefined) (patch as Record<string, unknown>)[f] = args[f];
       }
       const merged = Issue.parse({ ...issue, ...patch });
+      // Write only the columns the caller changed. Rewriting the whole row from
+      // the snapshot read above would silently revert a concurrent update to a
+      // different field.
+      const encoded = issueCodec.encode(merged) as Record<string, unknown>;
+      const columnOf: Record<string, string> = {
+        issueTypeId: "issue_type_id", priorityId: "priority_id", subject: "subject",
+        description: "description", visibility: "visibility", customFields: "custom_fields",
+      };
+      const changed = Object.fromEntries(Object.keys(patch).map((f) => [columnOf[f], encoded[columnOf[f]]]));
       await db.transaction().execute(async (trx) => {
-        await trx.updateTable("issues").set(issueCodec.encode(merged) as never).where("id", "=", merged.id).execute();
+        if (Object.keys(changed).length > 0) {
+          await trx.updateTable("issues").set(changed as never).where("id", "=", merged.id).execute();
+        }
         await appendActivity(ctx, trx, { projectId: merged.projectId, userId: args.actorId, action: "updated", targetType: "issue", targetId: merged.id });
       });
       return merged;
@@ -300,9 +311,12 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       return moved;
     },
 
-    transitionIssueStatus: async ({ actorId, issueId, toStatusId }) => {
+    transitionIssueStatus: async ({ actorId, issueId, toStatusId, expectedStatusId }) => {
       const issue = await seenOrNotFound(actorId, await loadIssue(issueId));
       const fromStatusId = issue.statusId;
+      if (expectedStatusId !== undefined && expectedStatusId !== fromStatusId) {
+        throw new ConflictError(`Issue ${issueId} is in status ${fromStatusId}, not the expected ${expectedStatusId}`);
+      }
       if (!(await isGlobalAdmin(ctx, actorId))) {
         // A workflow rule with empty roleIds means "any member", so membership
         // itself has to be checked here; the rule check below doesn't do it.
@@ -315,7 +329,13 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const toCategory = (await db.selectFrom("statuses").select("category").where("id", "=", toStatusId).executeTakeFirst())?.category;
       const occurredAt = ctx.now();
       await db.transaction().execute(async (trx) => {
-        await trx.updateTable("issues").set({ status_id: toStatusId }).where("id", "=", issueId).execute();
+        // Compare-and-set on the status the workflow check ran against, so a
+        // concurrent transition can't be silently overwritten (and the recorded
+        // from-status stays truthful). Throwing rolls the transaction back.
+        const res = await trx.updateTable("issues").set({ status_id: toStatusId }).where("id", "=", issueId).where("status_id", "=", fromStatusId).executeTakeFirst();
+        if (Number(res.numUpdatedRows) === 0) {
+          throw new ConflictError(`Issue ${issueId} changed status concurrently; reload and retry`);
+        }
         await trx
           .insertInto("issue_status_changes")
           .values({ id: ctx.genId(), issue_id: issueId, from_status_id: fromStatusId, to_status_id: toStatusId, user_id: actorId, occurred_at: occurredAt })

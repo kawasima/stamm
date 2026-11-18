@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ForbiddenError, NotFoundError } from "../errors.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { createTestDb } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { configBehaviors } from "./config.js";
@@ -139,6 +139,61 @@ describe("issue domain — lifecycle", () => {
     await expect(
       w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: w.todo.id }),
     ).rejects.toThrow();
+    await w.db.destroy();
+  });
+
+  it("rejects a transition whose expectedStatusId is stale, leaving the issue and history untouched", async () => {
+    const w = await worldWithWorkflow();
+    const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "T" });
+    await expect(
+      w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: w.doing.id, expectedStatusId: w.doing.id }),
+    ).rejects.toBeInstanceOf(ConflictError);
+    expect((await w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id })).statusId).toBe(w.todo.id);
+    const history = await w.issues.listIssueStatusHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
+    expect(history.items).toHaveLength(0);
+    // the matching expectation goes through
+    const moved = await w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: w.doing.id, expectedStatusId: w.todo.id });
+    expect(moved.statusId).toBe(w.doing.id);
+    await w.db.destroy();
+  });
+
+  it("lets only one of two concurrent transitions win and records one truthful history row", async () => {
+    const w = await worldWithWorkflow();
+    const review = await w.config.createStatus({ actorId: w.admin.id, name: "Review", category: "in_progress", sortOrder: 2 });
+    const wf = (await import("./workflow-config.js")).workflowConfigBehaviors(w.ctx);
+    await wf.setWorkflowTransitions({
+      actorId: w.admin.id, projectId: w.proj.id, issueTypeId: w.type.id,
+      transitions: [
+        { fromStatusId: w.todo.id, toStatusId: w.doing.id, roleIds: [w.memberRole.id] },
+        { fromStatusId: w.todo.id, toStatusId: review.id, roleIds: [w.memberRole.id] },
+      ],
+    });
+    const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "T" });
+    const results = await Promise.allSettled([
+      w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: w.doing.id }),
+      w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: review.id }),
+    ]);
+    const won = results.filter((r) => r.status === "fulfilled");
+    expect(won).toHaveLength(1);
+    const winnerStatus = (won[0] as PromiseFulfilledResult<{ statusId: string }>).value.statusId;
+    expect((await w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id })).statusId).toBe(winnerStatus);
+    const history = await w.issues.listIssueStatusHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
+    expect(history.items).toHaveLength(1);
+    expect(history.items[0]).toMatchObject({ fromStatusId: w.todo.id, toStatusId: winnerStatus });
+    await w.db.destroy();
+  });
+
+  it("keeps both of two concurrent updates to different fields", async () => {
+    const w = await world();
+    const other = await w.config.createPriority({ actorId: w.admin.id, name: "High" });
+    const issue = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, ...w.base, subject: "Old" });
+    await Promise.all([
+      w.issues.updateIssue({ actorId: w.alice.id, issueId: issue.id, subject: "New" }),
+      w.issues.updateIssue({ actorId: w.alice.id, issueId: issue.id, priorityId: other.id }),
+    ]);
+    const after = await w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id });
+    expect(after.subject).toBe("New");
+    expect(after.priorityId).toBe(other.id);
     await w.db.destroy();
   });
 
