@@ -27,6 +27,11 @@ async function seededBehaviors() {
   return { b, admin, role, todo, done, priority, type, proj, alice, bob };
 }
 
+/** Assignees must be project members: make bob one (the seed leaves him outside on purpose). */
+async function addBob(w: Awaited<ReturnType<typeof seededBehaviors>>) {
+  await w.b.addProjectMember({ actorId: w.admin.id, projectId: w.proj.id, userId: w.bob.id, roleIds: [w.role.id] });
+}
+
 describe("MCP end-to-end over a real SQL backend", () => {
   it("create → get → search through MCP tools", async () => {
     const w = await seededBehaviors();
@@ -87,6 +92,7 @@ describe("MCP end-to-end over a real SQL backend", () => {
 
   it("the compound issue_update tool fans out to satellites", async () => {
     const w = await seededBehaviors();
+    await addBob(w);
     const client = await connect(w.b);
     const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
     const issue = (await client.callTool({ name: "issue_create", arguments: { ...base, subject: "S" } })).structuredContent as { id: string };
@@ -135,6 +141,7 @@ describe("MCP end-to-end over a real SQL backend", () => {
 
   it("issue_update is atomic: a failing later step leaves earlier changes uncommitted", async () => {
     const w = await seededBehaviors();
+    await addBob(w);
     const client = await connect(w.b);
     const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
     const issue = (await client.callTool({ name: "issue_create", arguments: { ...base, subject: "Before" } })).structuredContent as { id: string };
@@ -171,6 +178,7 @@ describe("MCP end-to-end over a real SQL backend", () => {
 
   it("issue writes generate notifications visible through MCP", async () => {
     const w = await seededBehaviors();
+    await addBob(w);
     const client = await connect(w.b);
     const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
     await client.callTool({ name: "issue_create", arguments: { ...base, subject: "S", assigneeIds: [w.bob.id] } });

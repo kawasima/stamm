@@ -21,7 +21,7 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf, rolesOf, scopeAllowsProject } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf, rolesOf, scopeAllowsProject, assertAssignable } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
@@ -142,6 +142,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const proj = await db.selectFrom("projects").select("identifier").where("id", "=", args.projectId).executeTakeFirst();
       if (!proj) throw new NotFoundError("Project", args.projectId);
       await validateCustomFields(ctx, { projectId: args.projectId, issueTypeId: args.issueTypeId, values: args.customFields });
+      await assertAssignable(ctx, args.projectId, args.assigneeIds ?? []);
       const statusId = args.statusId ?? (await resolveDefaultStatus(ctx, args.projectId, args.issueTypeId)).id;
 
       let issue!: IssueT;

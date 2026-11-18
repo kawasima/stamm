@@ -1,6 +1,6 @@
 import { Role, type Permission, type User, type PublicUser } from "../schema/index.js";
 import type { Ctx } from "./ctx.js";
-import { ForbiddenError, NotFoundError } from "./errors.js";
+import { ForbiddenError, NotFoundError, ValidationError } from "./errors.js";
 import { makeCodec } from "./db/codec.js";
 
 const roleCodec = makeCodec(Role, { json: ["permissions"] });
@@ -45,6 +45,27 @@ export async function isMember(ctx: Ctx, projectId: string, userId: string): Pro
     .where("user_id", "=", userId)
     .executeTakeFirst();
   return row !== undefined;
+}
+
+/**
+ * Assignees must belong to the issue's project. Assigning an outsider would hand
+ * them a notification carrying the issue's title, which for a private project
+ * discloses it to someone who may not read it.
+ */
+export async function assertAssignable(ctx: Ctx, projectId: string, userIds: string[]): Promise<void> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return;
+  const rows = await ctx.db
+    .selectFrom("project_memberships")
+    .select("user_id")
+    .where("project_id", "=", projectId)
+    .where("user_id", "in", ids)
+    .execute();
+  const members = new Set(rows.map((r) => r.user_id));
+  const outsiders = ids.filter((id) => !members.has(id));
+  if (outsiders.length) {
+    throw new ValidationError(`Not members of project ${projectId}, so they cannot be assigned: ${outsiders.join(", ")}`);
+  }
 }
 
 /**

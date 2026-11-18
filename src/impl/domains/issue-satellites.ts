@@ -18,7 +18,7 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue, assertAssignable } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { inTransaction } from "../tx.js";
 
@@ -67,6 +67,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     setIssueAssignees: async ({ actorId, issueId, assigneeIds }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.assign");
+      await assertAssignable(ctx, projectId, assigneeIds);
       const assignees = assigneeIds.map((assigneeId) => IssueAssignee.parse({ id: ctx.genId(), issueId, assigneeId }));
       await inTransaction(db, async (trx) => {
         await trx.deleteFrom("issue_assignees").where("issue_id", "=", issueId).execute();

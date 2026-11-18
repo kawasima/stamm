@@ -26,6 +26,8 @@ async function world() {
   const alice = await config.createUser({ actorId: admin.id, login: "alice", email: "al@x.io", displayName: "Alice" });
   const bob = await config.createUser({ actorId: admin.id, login: "bob", email: "b@x.io", displayName: "Bob" });
   await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: alice.id, roleIds: [role.id] });
+  // assignees must be project members
+  await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: bob.id, roleIds: [role.id] });
   const base = { issueTypeId: type.id, priorityId: priority.id };
   return { db, config, project, issues, comments, notifications, admin, todo, done, priority, type, proj, alice, bob, base };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ForbiddenError, NotFoundError } from "../errors.js";
+import { ForbiddenError, NotFoundError, ValidationError } from "../errors.js";
 import { createTestDb } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { configBehaviors } from "./config.js";
@@ -25,18 +25,35 @@ async function world() {
   const proj = await project.createProject({ actorId: admin.id, identifier: "proj", name: "P" });
   const alice = await config.createUser({ actorId: admin.id, login: "alice", email: "al@x.io", displayName: "Alice" });
   await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: alice.id, roleIds: [role.id] });
+  const member = await config.createUser({ actorId: admin.id, login: "mem", email: "mem@x.io", displayName: "Mem" });
+  await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: member.id, roleIds: [role.id] });
   const issue = await issues.createIssue({ actorId: alice.id, projectId: proj.id, issueTypeId: type.id, priorityId: priority.id, subject: "I" });
-  return { db, config, project, issues, sat, milestones, admin, role, priority, type, proj, alice, issue };
+  return { db, config, project, issues, sat, milestones, admin, role, priority, type, proj, alice, member, issue };
 }
 
 describe("issue satellites", () => {
   it("setIssueAssignees replaces all and getIssueDetail reflects it", async () => {
     const w = await world();
-    await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.alice.id, w.admin.id] });
-    const r2 = await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.admin.id] });
-    expect(r2.assignees.map((a) => a.assigneeId)).toEqual([w.admin.id]);
+    await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.alice.id, w.member.id] });
+    const r2 = await w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.member.id] });
+    expect(r2.assignees.map((a) => a.assigneeId)).toEqual([w.member.id]);
     const detail = await w.issues.getIssueDetail({ actorId: w.alice.id, issueId: w.issue.id });
-    expect(detail.assignees.map((a) => a.id)).toEqual([w.admin.id]);
+    expect(detail.assignees.map((a) => a.id)).toEqual([w.member.id]);
+    await w.db.destroy();
+  });
+
+  it("refuses to assign someone who is not a member of the issue's project, on set and on create", async () => {
+    const w = await world();
+    const outsider = await w.config.createUser({ actorId: w.admin.id, login: "out", email: "o@x.io", displayName: "Out" });
+    await expect(
+      w.sat.setIssueAssignees({ actorId: w.alice.id, issueId: w.issue.id, assigneeIds: [w.member.id, outsider.id] }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      w.issues.createIssue({ actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id, subject: "x", assigneeIds: [outsider.id] }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    // nothing was changed or notified by the refused calls
+    const detail = await w.issues.getIssueDetail({ actorId: w.alice.id, issueId: w.issue.id });
+    expect(detail.assignees).toEqual([]);
     await w.db.destroy();
   });
 
