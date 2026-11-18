@@ -7,7 +7,10 @@ import type { Behaviors } from "./behaviors.js";
 async function seededBehaviors() {
   const db = makeSqlite(":memory:");
   await migrateToLatest(db);
-  const b: Behaviors = createSqlBehaviors(db);
+  // Strictly increasing clock: with the wall clock, two writes in the same
+  // millisecond tie on occurred_at and the random id decides the history order.
+  let t = Date.parse("2026-06-16T00:00:00.000Z");
+  const b: Behaviors = createSqlBehaviors(db, { now: () => new Date((t += 1000)).toISOString() });
 
   const admin = await b.createUser({ actorId: "boot", login: "admin", email: "a@x.io", displayName: "Admin", kind: "admin" });
   const role = await b.createRole({ actorId: admin.id, name: "Member", permissions: ["issue.create", "issue.update", "issue.assign", "comment.create"], issuesVisibility: "all" });
@@ -128,6 +131,26 @@ describe("MCP end-to-end over a real SQL backend", () => {
     });
     expect(created.isError).toBeFalsy();
     expect((created.structuredContent as { authorId: string }).authorId).toBe(w.alice.id);
+  });
+
+  it("issue_update is atomic: a failing later step leaves earlier changes uncommitted", async () => {
+    const w = await seededBehaviors();
+    const client = await connect(w.b);
+    const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
+    const issue = (await client.callTool({ name: "issue_create", arguments: { ...base, subject: "Before" } })).structuredContent as { id: string };
+
+    // subject and assignees apply first; the nonexistent parent then fails
+    const res = await client.callTool({
+      name: "issue_update",
+      arguments: { actorId: w.alice.id, issueId: issue.id, subject: "After", assigneeIds: [w.bob.id], parentIssueId: "does-not-exist" },
+    });
+    expect(res.isError).toBe(true);
+
+    const detail = (await client.callTool({ name: "issue_get_detail", arguments: { actorId: w.alice.id, issueId: issue.id } })).structuredContent as { subject: string; assignees: unknown[] };
+    expect(detail.subject).toBe("Before");
+    expect(detail.assignees).toEqual([]);
+    const notes = await client.callTool({ name: "notification_list", arguments: { actorId: w.bob.id, recipientId: w.bob.id, pagination: { limit: 20 } } });
+    expect((notes.structuredContent as { items: unknown[] }).items).toEqual([]);
   });
 
   it("issue writes land on the activity feed visible through MCP", async () => {

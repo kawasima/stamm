@@ -5,6 +5,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertGlobalAdmin } from "../permissions.js";
+import { inTransaction } from "../tx.js";
 
 type WorkflowConfigMethods =
   | "listWorkflowTransitions"
@@ -29,7 +30,7 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
     setWorkflowTransitions: async ({ actorId, projectId, issueTypeId, transitions }) => {
       await assertGlobalAdmin(ctx, actorId);
       const created: WorkflowTransitionT[] = [];
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         await trx
           .deleteFrom("workflow_transitions")
           .where("project_id", "=", projectId)

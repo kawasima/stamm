@@ -6,6 +6,7 @@ import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { inTransaction } from "../tx.js";
 
 type MilestoneMethods =
   | "createMilestone" | "getMilestone" | "updateMilestone" | "deleteMilestone" | "listMilestones"
@@ -55,7 +56,7 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
     deleteMilestone: async ({ actorId, milestoneId }) => {
       const m = await load(milestoneId);
       await assertCanWrite(ctx, m.projectId, actorId, "milestone.manage");
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         await trx.deleteFrom("issue_milestones").where("milestone_id", "=", milestoneId).execute();
         await trx.deleteFrom("milestones").where("id", "=", milestoneId).execute();
       });

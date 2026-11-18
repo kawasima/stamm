@@ -6,6 +6,7 @@ import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { inTransaction } from "../tx.js";
 
 type IterationMethods =
   | "createIteration" | "getIteration" | "updateIteration" | "deleteIteration" | "listIterations" | "getIterationProgress";
@@ -49,7 +50,7 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
     deleteIteration: async ({ actorId, iterationId }) => {
       const it = await load(iterationId);
       await assertCanWrite(ctx, it.projectId, actorId, "iteration.manage");
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         await trx.deleteFrom("issue_iterations").where("iteration_id", "=", iterationId).execute();
         await trx.deleteFrom("iterations").where("id", "=", iterationId).execute();
       });

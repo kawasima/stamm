@@ -23,14 +23,17 @@ export const validIssue = {
  * test only wires up the handful of behaviors it actually exercises.
  */
 export function stubBehaviors(overrides: Partial<Behaviors> = {}): Behaviors {
-  return new Proxy(overrides as Behaviors, {
+  const proxy: Behaviors = new Proxy(overrides as Behaviors, {
     get(target, prop: string) {
       if (prop in target) return (target as unknown as Record<string, unknown>)[prop];
+      // Stubs have no transaction to bind: run the callback on the stub itself.
+      if (prop === "atomically") return (fn: (b: Behaviors) => Promise<unknown>) => fn(proxy);
       return () => {
         throw new Error(`Behaviors.${prop} was called but not stubbed`);
       };
     },
   });
+  return proxy;
 }
 
 /** Connect an in-memory client to a stamm server backed by `behaviors`. */

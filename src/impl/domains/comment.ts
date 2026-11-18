@@ -7,6 +7,7 @@ import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, assertCanReadIssue, canSeePrivateInProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { inTransaction } from "../tx.js";
 
 type CommentMethods = "createComment" | "getComment" | "updateComment" | "deleteComment" | "listComments";
 
@@ -35,7 +36,7 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       await assertCanWrite(ctx, projectId, actorId, "comment.create");
       const comment = Comment.parse({ id: ctx.genId(), occurredAt: ctx.now(), issueId, authorId: actorId, body, visibility: visibility ?? "public" });
       const authorId = await issueAuthor(issueId);
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         await trx.insertInto("comments").values(codec.encode(comment) as never).execute();
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "commented", targetType: "issue", targetId: issueId, occurredAt: comment.occurredAt });
         await notifyIssueEvent(ctx, trx, { projectId, issueId, authorId, eventType: "issue.commented", title: "New comment", actorId, occurredAt: comment.occurredAt });

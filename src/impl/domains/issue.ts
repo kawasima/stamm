@@ -25,6 +25,7 @@ import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf,
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
+import { inTransaction } from "../tx.js";
 
 type IssueMethods =
   | "createIssue" | "getIssue" | "getIssueByKey" | "getIssueDetail"
@@ -143,7 +144,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const statusId = args.statusId ?? (await resolveDefaultStatus(ctx, args.projectId, args.issueTypeId)).id;
 
       let issue!: IssueT;
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         const maxRow = await trx
           .selectFrom("issues")
           .select((eb) => eb.fn.max("number").as("m"))
@@ -248,7 +249,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         description: "description", visibility: "visibility", customFields: "custom_fields",
       };
       const changed = Object.fromEntries(Object.keys(patch).map((f) => [columnOf[f], encoded[columnOf[f]]]));
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         if (Object.keys(changed).length > 0) {
           await trx.updateTable("issues").set(changed as never).where("id", "=", merged.id).execute();
         }
@@ -260,7 +261,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     deleteIssue: async ({ actorId, issueId }) => {
       const issue = await loadIssue(issueId);
       await assertCanWrite(ctx, issue.projectId, actorId, "issue.delete");
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         // Delete the Resource (the issue) and its current-state satellites. The
         // Events stay: issue_status_changes / issue_schedule_changes /
         // issue_estimation_changes / activity_entries are append-only and may
@@ -291,7 +292,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       // in the destination, not just the source.
       await assertCanWrite(ctx, targetProjectId, actorId, "issue.move");
       let moved!: IssueT;
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         const maxRow = await trx
           .selectFrom("issues")
           .select((eb) => eb.fn.max("number").as("m"))
@@ -328,7 +329,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       }
       const toCategory = (await db.selectFrom("statuses").select("category").where("id", "=", toStatusId).executeTakeFirst())?.category;
       const occurredAt = ctx.now();
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         // Compare-and-set on the status the workflow check ran against, so a
         // concurrent transition can't be silently overwritten (and the recorded
         // from-status stays truthful). Throwing rolls the transaction back.

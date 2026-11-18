@@ -20,6 +20,7 @@ import { recordScheduleChange, recordEstimationChange } from "../issue-events.js
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { inTransaction } from "../tx.js";
 
 type SatelliteMethods =
   | "setIssueAssignees" | "setIssueLabels" | "setIssueCategory" | "setIssueMilestone"
@@ -55,7 +56,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     issueId: string,
     value: T,
   ): Promise<T> => {
-    await adb.transaction().execute(async (trx: any) => {
+    await inTransaction(adb, async (trx: any) => {
       await trx.deleteFrom(table).where("issue_id", "=", issueId).execute();
       await trx.insertInto(table).values(codec.encode(value)).execute();
     });
@@ -67,7 +68,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.assign");
       const assignees = assigneeIds.map((assigneeId) => IssueAssignee.parse({ id: ctx.genId(), issueId, assigneeId }));
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         await trx.deleteFrom("issue_assignees").where("issue_id", "=", issueId).execute();
         if (assignees.length) await trx.insertInto("issue_assignees").values(assignees.map((a) => assigneeCodec.encode(a)) as never).execute();
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "assigned", targetType: "issue", targetId: issueId });
@@ -80,7 +81,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
       const labels = labelIds.map((labelId) => IssueLabel.parse({ id: ctx.genId(), issueId, labelId }));
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         await trx.deleteFrom("issue_labels").where("issue_id", "=", issueId).execute();
         if (labels.length) await trx.insertInto("issue_labels").values(labels.map((l) => labelCodec.encode(l)) as never).execute();
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "labeled", targetType: "issue", targetId: issueId });
@@ -107,7 +108,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       // private issue in a project they have no access to.
       await assertCanReadIssue(ctx, parentIssueId, actorId);
       const value = IssueParent.parse({ id: ctx.genId(), childIssueId, parentIssueId });
-      await adb.transaction().execute(async (trx: any) => {
+      await inTransaction(adb, async (trx: any) => {
         await trx.deleteFrom("issue_parents").where("child_issue_id", "=", childIssueId).execute();
         await trx.insertInto("issue_parents").values(parentCodec.encode(value)).execute();
       });
@@ -118,7 +119,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
       const value = IssueSchedule.parse({ id: ctx.genId(), issueId, startDate, dueDate });
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         const old = await trx.selectFrom("issue_schedules").select(["start_date", "due_date"]).where("issue_id", "=", issueId).executeTakeFirst();
         await trx.deleteFrom("issue_schedules").where("issue_id", "=", issueId).execute();
         await trx.insertInto("issue_schedules").values(scheduleCodec.encode(value) as never).execute();
@@ -131,7 +132,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
       const value = IssueEstimation.parse({ id: ctx.genId(), issueId, estimatedHours });
-      await db.transaction().execute(async (trx) => {
+      await inTransaction(db, async (trx) => {
         const old = await trx.selectFrom("issue_estimations").select("estimated_hours").where("issue_id", "=", issueId).executeTakeFirst();
         await trx.deleteFrom("issue_estimations").where("issue_id", "=", issueId).execute();
         await trx.insertInto("issue_estimations").values(estimationCodec.encode(value) as never).execute();

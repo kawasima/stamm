@@ -10,6 +10,14 @@ type Fn<C> = z.infer<C extends z.ZodTypeAny ? C : never>;
  * and is out of scope for the MCP projection.
  */
 export interface Behaviors {
+  /**
+   * Run `fn` with a Behaviors set bound to a single transaction: every write
+   * made through it commits together or not at all. Optional because only
+   * transactional backends can offer it; callers fall back to running `fn`
+   * on these behaviors directly (each step then commits on its own).
+   */
+  atomically?: <T>(fn: (b: Behaviors) => Promise<T>) => Promise<T>;
+
   // --- Issue ---
   getIssue: Fn<typeof B.GetIssue>;
   getIssueDetail: Fn<typeof B.GetIssueDetail>;

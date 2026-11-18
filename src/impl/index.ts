@@ -2,6 +2,7 @@ import type { Kysely } from "kysely";
 import type { Behaviors } from "../mcp/behaviors.js";
 import type { Database } from "./db/schema.js";
 import { makeCtx, type CtxOptions } from "./ctx.js";
+import { inTransaction } from "./tx.js";
 import { configBehaviors } from "./domains/config.js";
 import { customFieldBehaviors } from "./domains/custom-field.js";
 import { userExtraBehaviors } from "./domains/user-extras.js";
@@ -33,7 +34,9 @@ export type { Database } from "./db/schema.js";
  */
 export function createSqlBehaviors(db: Kysely<Database>, opts: CtxOptions = {}): Behaviors {
   const ctx = makeCtx(db, opts);
-  return {
+  const self: Behaviors = {
+    atomically: (fn) =>
+      inTransaction(db, (trx) => fn(db.isTransaction ? self : createSqlBehaviors(trx, opts))),
     ...configBehaviors(ctx),
     ...customFieldBehaviors(ctx),
     ...userExtraBehaviors(ctx),
@@ -53,4 +56,5 @@ export function createSqlBehaviors(db: Kysely<Database>, opts: CtxOptions = {}):
     ...templateBehaviors(ctx),
     ...viewBehaviors(ctx),
   };
+  return self;
 }
