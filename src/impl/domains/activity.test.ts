@@ -44,7 +44,7 @@ function world() {
 describe("activity feed (read-only over the canonical timeline)", () => {
   it("lists project activity newest-first", async () => {
     const w = await world();
-    const { items } = await w.activity.listActivities({ projectId: w.proj.id, pagination: { limit: 50 } });
+    const { items } = await w.activity.listActivities({ actorId: w.admin.id, projectId: w.proj.id, pagination: { limit: 50 } });
 
     expect(items.length).toBeGreaterThan(0);
     expect(items.every((e) => e.projectId === w.proj.id)).toBe(true);
@@ -56,15 +56,15 @@ describe("activity feed (read-only over the canonical timeline)", () => {
   it("filters by target, action, and actor", async () => {
     const w = await world();
 
-    const byTarget = await w.activity.listActivities({ targetId: w.issue.id, pagination: { limit: 50 } });
+    const byTarget = await w.activity.listActivities({ actorId: w.admin.id, targetId: w.issue.id, pagination: { limit: 50 } });
     expect(byTarget.items.every((e) => e.targetId === w.issue.id)).toBe(true);
     expect(byTarget.items.map((e) => e.action).sort()).toEqual(["created", "status_changed"]);
 
-    const created = await w.activity.listActivities({ action: "created", pagination: { limit: 50 } });
+    const created = await w.activity.listActivities({ actorId: w.admin.id, action: "created", pagination: { limit: 50 } });
     expect(created.items.length).toBeGreaterThan(0);
     expect(created.items.every((e) => e.action === "created")).toBe(true);
 
-    const byActor = await w.activity.listActivities({ userId: w.alice.id, pagination: { limit: 50 } });
+    const byActor = await w.activity.listActivities({ actorId: w.admin.id, userId: w.alice.id, pagination: { limit: 50 } });
     expect(byActor.items.length).toBeGreaterThan(0);
     expect(byActor.items.every((e) => e.userId === w.alice.id)).toBe(true);
     await w.db.destroy();
@@ -72,12 +72,12 @@ describe("activity feed (read-only over the canonical timeline)", () => {
 
   it("paginates with a keyset cursor without gaps or repeats", async () => {
     const w = await world();
-    const all = await w.activity.listActivities({ projectId: w.proj.id, pagination: { limit: 50 } });
+    const all = await w.activity.listActivities({ actorId: w.admin.id, projectId: w.proj.id, pagination: { limit: 50 } });
 
     const walked: string[] = [];
     let cursor: string | undefined;
     do {
-      const page = await w.activity.listActivities({ projectId: w.proj.id, pagination: { limit: 1, cursor } });
+      const page = await w.activity.listActivities({ actorId: w.admin.id, projectId: w.proj.id, pagination: { limit: 1, cursor } });
       walked.push(...page.items.map((e) => e.id));
       cursor = page.nextCursor;
     } while (cursor);
@@ -88,11 +88,11 @@ describe("activity feed (read-only over the canonical timeline)", () => {
 
   it("gets one entry by id and rejects an unknown id", async () => {
     const w = await world();
-    const { items } = await w.activity.listActivities({ targetId: w.issue.id, pagination: { limit: 1 } });
-    const got = await w.activity.getActivity({ activityId: items[0].id });
+    const { items } = await w.activity.listActivities({ actorId: w.admin.id, targetId: w.issue.id, pagination: { limit: 1 } });
+    const got = await w.activity.getActivity({ actorId: w.admin.id, activityId: items[0].id });
     expect(got).toMatchObject({ id: items[0].id, targetId: w.issue.id });
 
-    await expect(w.activity.getActivity({ activityId: "does-not-exist" })).rejects.toThrow();
+    await expect(w.activity.getActivity({ actorId: w.admin.id, activityId: "does-not-exist" })).rejects.toThrow();
     await w.db.destroy();
   });
 });

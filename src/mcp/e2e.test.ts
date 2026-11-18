@@ -136,13 +136,13 @@ describe("MCP end-to-end over a real SQL backend", () => {
     const base = { actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, priorityId: w.priority.id };
     const id = ((await client.callTool({ name: "issue_create", arguments: { ...base, subject: "S" } })).structuredContent as { id: string }).id;
 
-    const feed = await client.callTool({ name: "activity_list", arguments: { targetId: id, pagination: { limit: 20 } } });
+    const feed = await client.callTool({ name: "activity_list", arguments: { actorId: w.alice.id, targetId: id, pagination: { limit: 20 } } });
     expect(feed.isError).toBeFalsy();
     const items = (feed.structuredContent as { items: { id: string; action: string; targetId: string }[] }).items;
     expect(items.map((a) => a.action)).toContain("created");
     expect(items.every((a) => a.targetId === id)).toBe(true);
 
-    const one = await client.callTool({ name: "activity_get", arguments: { activityId: items[0].id } });
+    const one = await client.callTool({ name: "activity_get", arguments: { actorId: w.alice.id, activityId: items[0].id } });
     expect((one.structuredContent as { id: string }).id).toBe(items[0].id);
   });
 

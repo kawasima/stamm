@@ -63,7 +63,7 @@ describe("schedule / estimation change events", () => {
     expect(hist.items.map((e) => e.toHours)).toEqual([4, 6]);
     expect(hist.items[1]).toMatchObject({ fromHours: 4, toHours: 6 });
 
-    const feed = await w.activity.listActivities({ targetId: issue.id, action: "estimated", pagination: { limit: 20 } });
+    const feed = await w.activity.listActivities({ actorId: w.admin.id, targetId: issue.id, action: "estimated", pagination: { limit: 20 } });
     expect(feed.items).toHaveLength(2);
     await w.db.destroy();
   });
@@ -97,7 +97,7 @@ describe("issue deletion preserves events (immutable data model)", () => {
     const schedule = await w.issues.listIssueScheduleHistory({ actorId: w.admin.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(schedule.items.length).toBeGreaterThan(0);
 
-    const feed = await w.activity.listActivities({ targetId: issue.id, pagination: { limit: 50 } });
+    const feed = await w.activity.listActivities({ actorId: w.admin.id, targetId: issue.id, pagination: { limit: 50 } });
     const actions = feed.items.map((e) => e.action);
     expect(actions).toContain("created");
     expect(actions).toContain("deleted");

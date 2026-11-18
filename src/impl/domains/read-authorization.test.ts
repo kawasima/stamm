@@ -338,3 +338,60 @@ describe("read authorization — private comments are members-only within an oth
     await w.db.destroy();
   });
 });
+
+describe("read authorization — the activity feed follows project and issue visibility", () => {
+  async function feedWorld() {
+    const w = await world();
+    const activity = (await import("./activity.js")).activityBehaviors(makeCtx(w.db));
+    // A public project with one public and one private issue.
+    const pub = await w.project.createProject({ actorId: w.admin.id, identifier: "open", name: "Open" });
+    const pubIssue = await w.issues.createIssue({ actorId: w.admin.id, projectId: pub.id, issueTypeId: w.issue.issueTypeId, priorityId: w.issue.priorityId, subject: "Visible" });
+    const hiddenIssue = await w.issues.createIssue({ actorId: w.admin.id, projectId: pub.id, issueTypeId: w.issue.issueTypeId, priorityId: w.issue.priorityId, subject: "Hidden", visibility: "private" });
+    return { ...w, activity, pub, pubIssue, hiddenIssue };
+  }
+  const ids = (items: { targetId: string }[]) => new Set(items.map((e) => e.targetId));
+
+  it("hides a private project's entries from an outsider and rejects an explicit project filter", async () => {
+    const w = await feedWorld();
+    const feed = await w.activity.listActivities({ actorId: w.outsider.id, pagination: { limit: 100 } });
+    expect(feed.items.some((e) => e.projectId === w.proj.id)).toBe(false);
+    await expect(
+      w.activity.listActivities({ actorId: w.outsider.id, projectId: w.proj.id, pagination: { limit: 20 } }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await w.db.destroy();
+  });
+
+  it("hides entries about a private issue in a public project from non-members", async () => {
+    const w = await feedWorld();
+    const feed = await w.activity.listActivities({ actorId: w.outsider.id, pagination: { limit: 100 } });
+    expect(ids(feed.items).has(w.pubIssue.id)).toBe(true);
+    expect(ids(feed.items).has(w.hiddenIssue.id)).toBe(false);
+    await w.db.destroy();
+  });
+
+  it("returns a full page by skipping hidden entries, and walks the cursor without gaps", async () => {
+    const w = await feedWorld();
+    const all = await w.activity.listActivities({ actorId: w.outsider.id, pagination: { limit: 100 } });
+    const walked: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await w.activity.listActivities({ actorId: w.outsider.id, pagination: { limit: 1, cursor } });
+      expect(page.items.length).toBeLessThanOrEqual(1);
+      walked.push(...page.items.map((e) => e.id));
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(walked).toEqual(all.items.map((e) => e.id));
+    await w.db.destroy();
+  });
+
+  it("getActivity reports a hidden entry as NotFound; members and admins see everything", async () => {
+    const w = await feedWorld();
+    const hidden = (await w.activity.listActivities({ actorId: w.admin.id, targetId: w.hiddenIssue.id, pagination: { limit: 10 } })).items[0];
+    await expect(w.activity.getActivity({ actorId: w.outsider.id, activityId: hidden.id })).rejects.toBeInstanceOf(NotFoundError);
+    const secret = (await w.activity.listActivities({ actorId: w.admin.id, targetId: w.issue.id, pagination: { limit: 10 } })).items[0];
+    await expect(w.activity.getActivity({ actorId: w.outsider.id, activityId: secret.id })).rejects.toBeInstanceOf(NotFoundError);
+    expect((await w.activity.getActivity({ actorId: w.member.id, activityId: secret.id })).id).toBe(secret.id);
+    expect((await w.activity.getActivity({ actorId: w.admin.id, activityId: hidden.id })).id).toBe(hidden.id);
+    await w.db.destroy();
+  });
+});

@@ -15,6 +15,7 @@ import { PaginatedResult } from "./common.js";
 /** List activity entries (project-scoped activity feed) */
 export const ListActivities = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id.optional(),
     userId: Id.optional(),
     action: ActivityAction.optional(),
@@ -28,5 +29,5 @@ export const ListActivities = z.function()
 
 /** Get a single activity entry by ID */
 export const GetActivity = z.function()
-  .args(z.object({ activityId: Id }))
+  .args(z.object({ actorId: Id, activityId: Id }))
   .returns(z.promise(ActivityEntry));
