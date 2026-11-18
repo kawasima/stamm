@@ -1,11 +1,11 @@
 import { Comment } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { NotFoundError } from "../errors.js";
+import { ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue, canSeePrivateInProject } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue, canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { inTransaction } from "../tx.js";
 
@@ -28,6 +28,21 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
     const row = await db.selectFrom("comments").selectAll().where("id", "=", commentId).executeTakeFirst();
     if (!row) throw new NotFoundError("Comment", commentId);
     return codec.decode(row);
+  };
+
+  /**
+   * Editing or removing a comment needs the project permission and, on top of it,
+   * authorship: a comment is someone's statement, so only its author or a global
+   * admin (moderation) may change it. The issue must also be readable by the
+   * actor, so a role limited to `own_or_assigned` can't edit comments on issues
+   * it can't see.
+   */
+  const assertCanModify = async (actorId: string, comment: Comment, perm: "comment.update" | "comment.delete"): Promise<void> => {
+    await assertCanReadIssue(ctx, comment.issueId, actorId);
+    await assertCanWrite(ctx, await issueProjectId(comment.issueId), actorId, perm);
+    if (comment.authorId !== actorId && !(await isGlobalAdmin(ctx, actorId))) {
+      throw new ForbiddenError(`User ${actorId} may not change a comment written by ${comment.authorId}`);
+    }
   };
 
   return {
@@ -60,7 +75,7 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
 
     updateComment: async ({ actorId, commentId, body, visibility }) => {
       const current = await loadComment(commentId);
-      await assertCanWrite(ctx, await issueProjectId(current.issueId), actorId, "comment.update");
+      await assertCanModify(actorId, current, "comment.update");
       const merged = Comment.parse({ ...current, body, ...(visibility !== undefined ? { visibility } : {}) });
       await db.updateTable("comments").set(codec.encode(merged) as never).where("id", "=", commentId).execute();
       return merged;
@@ -68,7 +83,7 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
 
     deleteComment: async ({ actorId, commentId }) => {
       const current = await loadComment(commentId);
-      await assertCanWrite(ctx, await issueProjectId(current.issueId), actorId, "comment.delete");
+      await assertCanModify(actorId, current, "comment.delete");
       await db.deleteFrom("comments").where("id", "=", commentId).execute();
     },
 

@@ -51,6 +51,24 @@ describe("comments", () => {
     await w.db.destroy();
   });
 
+  it("lets only the author or a global admin edit or delete a comment", async () => {
+    const w = await world();
+    const bob = await w.config.createUser({ actorId: w.admin.id, login: "bob", email: "b@x.io", displayName: "Bob" });
+    const dev = (await w.db.selectFrom("roles").select("id").where("name", "=", "Dev").executeTakeFirstOrThrow()).id;
+    await w.project.addProjectMember({ actorId: w.admin.id, projectId: w.proj.id, userId: bob.id, roleIds: [dev] });
+    const c = await w.comments.createComment({ issueId: w.issue.id, actorId: w.alice.id, body: "mine" });
+
+    // bob holds comment.update/delete but did not write it
+    await expect(w.comments.updateComment({ actorId: bob.id, commentId: c.id, body: "hijacked" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(w.comments.deleteComment({ actorId: bob.id, commentId: c.id })).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await w.comments.getComment({ actorId: w.alice.id, commentId: c.id })).body).toBe("mine");
+
+    // a global admin may moderate, and the author may edit
+    expect((await w.comments.updateComment({ actorId: w.admin.id, commentId: c.id, body: "moderated" })).body).toBe("moderated");
+    expect((await w.comments.updateComment({ actorId: w.alice.id, commentId: c.id, body: "again" })).body).toBe("again");
+    await w.db.destroy();
+  });
+
   it("requires comment.create permission", async () => {
     const w = await world();
     const bob = await w.config.createUser({ actorId: w.admin.id, login: "bob", email: "b@x.io", displayName: "Bob" });
