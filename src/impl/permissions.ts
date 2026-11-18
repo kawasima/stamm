@@ -5,7 +5,20 @@ import { makeCodec } from "./db/codec.js";
 
 const roleCodec = makeCodec(Role, { json: ["permissions"] });
 
+/**
+ * Whether the key behind `ctx` may touch `projectId`. Always true for an
+ * unscoped ctx. A scope can only narrow access: callers still apply the user's
+ * own rights on top.
+ */
+export function scopeAllowsProject(ctx: Ctx, projectId: string): boolean {
+  const ids = ctx.scope?.projectIds;
+  return ids === undefined || ids.includes(projectId);
+}
+
 export async function isGlobalAdmin(ctx: Ctx, userId: string): Promise<boolean> {
+  // A project-limited key never acts as a global admin: the admin bypass would
+  // reach every project, which is exactly what the scope is there to prevent.
+  if (ctx.scope?.projectIds) return false;
   const row = await ctx.db.selectFrom("users").select("kind").where("id", "=", userId).executeTakeFirst();
   return row?.kind === "admin";
 }
@@ -24,6 +37,7 @@ export function projectUser(user: User, viewerId: string | undefined, viewerIsAd
 }
 
 export async function isMember(ctx: Ctx, projectId: string, userId: string): Promise<boolean> {
+  if (!scopeAllowsProject(ctx, projectId)) return false;
   const row = await ctx.db
     .selectFrom("project_memberships")
     .select("id")
@@ -45,6 +59,7 @@ export async function canSeePrivateInProject(ctx: Ctx, projectId: string, userId
 
 /** The roles a user holds in a project (via the normalized membership-role join). */
 export async function rolesOf(ctx: Ctx, projectId: string, userId: string): Promise<Role[]> {
+  if (!scopeAllowsProject(ctx, projectId)) return [];
   const rows = await ctx.db
     .selectFrom("project_memberships as m")
     .innerJoin("project_membership_roles as mr", "mr.membership_id", "m.id")
@@ -57,6 +72,7 @@ export async function rolesOf(ctx: Ctx, projectId: string, userId: string): Prom
 }
 
 export async function roleIdsOf(ctx: Ctx, projectId: string, userId: string): Promise<string[]> {
+  if (!scopeAllowsProject(ctx, projectId)) return [];
   const rows = await ctx.db
     .selectFrom("project_memberships as m")
     .innerJoin("project_membership_roles as mr", "mr.membership_id", "m.id")
@@ -68,6 +84,9 @@ export async function roleIdsOf(ctx: Ctx, projectId: string, userId: string): Pr
 }
 
 export async function hasPermission(ctx: Ctx, projectId: string, userId: string, perm: Permission): Promise<boolean> {
+  // A read-only key holds no write permission, whatever its user's roles are.
+  if (ctx.scope?.readOnly) return false;
+  if (!scopeAllowsProject(ctx, projectId)) return false;
   if (await isGlobalAdmin(ctx, userId)) return true;
   const roles = await rolesOf(ctx, projectId, userId);
   return roles.some((r) => r.permissions.includes(perm));
@@ -82,7 +101,7 @@ export async function assertCanWrite(ctx: Ctx, projectId: string, userId: string
 
 /** Gate a global (project-less) write such as config CRUD or project creation. */
 export async function assertGlobalAdmin(ctx: Ctx, userId: string): Promise<void> {
-  if (!(await isGlobalAdmin(ctx, userId))) {
+  if (ctx.scope?.readOnly || !(await isGlobalAdmin(ctx, userId))) {
     throw new ForbiddenError(`User ${userId} must be a global admin for this operation`);
   }
 }
@@ -94,6 +113,7 @@ export async function assertGlobalAdmin(ctx: Ctx, userId: string): Promise<void>
  * drafts, views, …) the way issues are already scoped.
  */
 export async function canReadProject(ctx: Ctx, projectId: string, userId: string): Promise<boolean> {
+  if (!scopeAllowsProject(ctx, projectId)) return false;
   if (await isGlobalAdmin(ctx, userId)) return true;
   if (await isMember(ctx, projectId, userId)) return true;
   const cat = await ctx.db
@@ -131,6 +151,7 @@ export async function assertCanReadIssue(ctx: Ctx, issueId: string, userId: stri
     .where("id", "=", issueId)
     .executeTakeFirst();
   if (!issue) throw new NotFoundError("Issue", issueId);
+  if (!scopeAllowsProject(ctx, issue.project_id)) throw new NotFoundError("Issue", issueId);
 
   const author = issue.author_id === userId;
   const member = await isMember(ctx, issue.project_id, userId);

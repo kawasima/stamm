@@ -21,7 +21,7 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf, rolesOf } from "../permissions.js";
+import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf, rolesOf, scopeAllowsProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
@@ -74,6 +74,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
    * or are assigned to.
    */
   const canSeeIssue = async (actorId: string, issue: IssueT): Promise<boolean> => {
+    if (!scopeAllowsProject(ctx, issue.projectId)) return false;
     if (await isGlobalAdmin(ctx, actorId)) return true;
     const author = issue.authorId === actorId;
     const member = await isMember(ctx, issue.projectId, actorId);
@@ -222,7 +223,21 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
           satOne("issue_estimations", estimationCodec, issueId),
           satOne("issue_progress", progressCodec, issueId),
         ]);
-      return IssueDetail.parse({ ...issue, assignees, labels, watchers, relations, category, milestone, iteration, parent, schedule, estimation, progress });
+      // The parent (and relations) may live in another project; show them only if
+      // the actor could read them directly.
+      const visibleParent = parent && (await canSeeIssue(actorId, parent)) ? parent : undefined;
+      let visibleRelations = relations;
+      if (ctx.scope?.projectIds && relations.length) {
+        const ok = await db
+          .selectFrom("issues")
+          .select("id")
+          .where("id", "in", relations.map((r) => r.relatedIssueId))
+          .where("project_id", "in", ctx.scope.projectIds)
+          .execute();
+        const okIds = new Set(ok.map((r) => r.id));
+        visibleRelations = relations.filter((r) => okIds.has(r.relatedIssueId));
+      }
+      return IssueDetail.parse({ ...issue, assignees, labels, watchers, relations: visibleRelations, category, milestone, iteration, parent: visibleParent, schedule, estimation, progress });
     },
 
     updateIssue: async (args) => {
@@ -429,6 +444,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
             eb.selectFrom("issue_parents").select("id").whereRef("issue_parents.child_issue_id", "=", "issues.id").where("issue_parents.parent_issue_id", "=", parentIssueId),
           ),
         );
+      if (ctx.scope?.projectIds) q = q.where("issues.project_id", "in", ctx.scope.projectIds);
       if (cursor) q = q.where("issues.id", ">", cursor);
       const rows = await q.orderBy("issues.id").limit(limit + 1).execute();
       const page = buildPage(rows.map((r: Record<string, unknown>) => issueCodec.decode(r)), (i) => i.id, limit);
@@ -489,6 +505,9 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         q = q.where(sql<boolean>`issue_schedules.due_date is not null and issue_schedules.due_date < ${today} and (select category from statuses where statuses.id = issues.status_id) != 'done'`);
       }
       if (f.query) q = q.where("issues.subject", "like", `%${f.query}%`);
+
+      // A project-limited key sees only its projects, whatever else matches.
+      if (ctx.scope?.projectIds) q = q.where("issues.project_id", "in", ctx.scope.projectIds);
 
       // Visibility scoped in SQL (not in app): see canSeeIssue for the policy.
       if (!(await isGlobalAdmin(ctx, args.actorId))) {

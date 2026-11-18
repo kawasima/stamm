@@ -1,6 +1,7 @@
 import { importJWK, jwtVerify, decodeProtectedHeader, decodeJwt } from "jose";
 import type { Ctx } from "../impl/ctx.js";
 import { UnauthorizedError } from "../impl/errors.js";
+import { KeyScope } from "../schema/index.js";
 
 export interface AuthConfig {
   /** Optional expected `iss` claim. */
@@ -19,9 +20,15 @@ const DEFAULT_MAX_TOKEN_AGE_SEC = 15 * 60;
  *  from "bad signature" so the endpoint can't be used to enumerate accounts. */
 const INVALID = "invalid or expired token";
 
+export interface Authenticated {
+  actorId: string;
+  /** The scope of the key that signed the token ({} = unrestricted). */
+  scope: KeyScope;
+}
+
 /**
  * Verify a `Authorization: Bearer <jwt>` header and return the authenticated
- * actorId (the user id). The flow reads the UNTRUSTED `sub`/`kid` only to look
+ * actorId (the user id) with the scope of the key that proved it. The flow reads the UNTRUSTED `sub`/`kid` only to look
  * up which stored public key to try (RFC 7515 key-selection); the signature is
  * then verified against that public key, so success proves the caller holds the
  * matching private key. Hardening:
@@ -36,7 +43,7 @@ export async function authenticate(
   ctx: Ctx,
   authorizationHeader: string | undefined,
   cfg: AuthConfig = {},
-): Promise<string> {
+): Promise<Authenticated> {
   if (!authorizationHeader || !authorizationHeader.startsWith("Bearer ")) {
     throw new UnauthorizedError("missing bearer token");
   }
@@ -59,7 +66,7 @@ export async function authenticate(
 
   let q = ctx.db
     .selectFrom("user_credentials")
-    .select(["public_key", "key_id"])
+    .select(["public_key", "key_id", "scope"])
     .where("user_id", "=", sub)
     .where("revoked_at", "is", null);
   if (kid) q = q.where("key_id", "=", kid);
@@ -84,7 +91,10 @@ export async function authenticate(
     }
     // Signature is valid → `sub` is proven. The account must still be usable.
     await assertAccountActive(ctx, sub);
-    return sub;
+    // A scope that doesn't parse must not fall back to "unrestricted".
+    const scope = KeyScope.safeParse(JSON.parse(row.scope));
+    if (!scope.success) throw new UnauthorizedError(INVALID);
+    return { actorId: sub, scope: scope.data };
   }
   throw new UnauthorizedError(INVALID);
 }

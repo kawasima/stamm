@@ -46,6 +46,7 @@ async function main(): Promise<void> {
   const path = process.env.STAMM_HTTP_PATH ?? "/mcp";
   const server = createHttpServer({
     behaviors,
+    scopedBehaviors: (scope) => createSqlBehaviors(db, { scope }),
     ctx,
     path,
     authConfig: { issuer: process.env.STAMM_JWT_ISS, audience: process.env.STAMM_JWT_AUD },

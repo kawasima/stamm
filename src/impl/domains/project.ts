@@ -145,6 +145,7 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
         const like = `%${args.query}%`;
         q = q.where((eb) => eb.or([eb("projects.name", "like", like), eb("projects.identifier", "like", like)]));
       }
+      if (ctx.scope?.projectIds) q = q.where("projects.id", "in", ctx.scope.projectIds);
       // Visibility scoping: non-admins see only public projects and those they
       // are a member of. A private project is otherwise omitted entirely.
       if (!(await isGlobalAdmin(ctx, args.actorId))) {

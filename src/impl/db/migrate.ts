@@ -10,6 +10,7 @@ import * as workspace0007 from "./migrations/0007_workspace.js";
 import * as changeEvents0008 from "./migrations/0008_change_events.js";
 import * as customFields0009 from "./migrations/0009_custom_fields.js";
 import * as indexes0010 from "./migrations/0010_indexes.js";
+import * as credentialScope0011 from "./migrations/0011_credential_scope.js";
 
 /** All migrations in order, keyed by a sortable name. */
 const MIGRATIONS: Record<string, Migration> = {
@@ -23,6 +24,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "0008_change_events": changeEvents0008,
   "0009_custom_fields": customFields0009,
   "0010_indexes": indexes0010,
+  "0011_credential_scope": credentialScope0011,
 };
 
 class StaticMigrationProvider implements MigrationProvider {

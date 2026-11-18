@@ -16,8 +16,8 @@ const seed: BootstrapResult = {
 };
 
 const keys: SeedKeys = {
-  adminKey: { userId: "admin-1", keyId: "ak", algorithm: "EdDSA", publicKey: "ADMIN_PUB" as never, privateKey: "ADMIN_SECRET" as never },
-  memberKey: { userId: "member-1", keyId: "mk", algorithm: "EdDSA", publicKey: "MEMBER_PUB" as never, privateKey: "MEMBER_SECRET" as never },
+  adminKey: { userId: "admin-1", keyId: "ak", algorithm: "EdDSA", scope: {}, publicKey: "ADMIN_PUB" as never, privateKey: "ADMIN_SECRET" as never },
+  memberKey: { userId: "member-1", keyId: "mk", algorithm: "EdDSA", scope: {}, publicKey: "MEMBER_PUB" as never, privateKey: "MEMBER_SECRET" as never },
 };
 
 function makeIo(overrides: Partial<SeedKeysIo>) {

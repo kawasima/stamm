@@ -4,6 +4,7 @@ import { createStammServer } from "../mcp/server.js";
 import type { Behaviors } from "../mcp/behaviors.js";
 import type { Ctx } from "../impl/ctx.js";
 import { UnauthorizedError } from "../impl/errors.js";
+import type { KeyScope } from "../schema/index.js";
 import { authenticate, type AuthConfig } from "./auth.js";
 
 export interface RateLimitOptions {
@@ -15,6 +16,12 @@ export interface RateLimitOptions {
 
 export interface HttpServerOptions {
   behaviors: Behaviors;
+  /**
+   * Build a behavior set whose permission layer enforces `scope`. Required to
+   * serve scoped keys: without it a key carrying a scope is refused rather than
+   * served with the unrestricted `behaviors`.
+   */
+  scopedBehaviors?: (scope: KeyScope) => Behaviors;
   /** Used by the auth layer to look up per-user public keys. */
   ctx: Ctx;
   /** Path the MCP endpoint is served on (default "/mcp"). */
@@ -107,9 +114,14 @@ export function createHttpServer(opts: HttpServerOptions): Server {
           if (!rl(ip, Date.now())) return sendJson(res, 429, { error: "rate limit exceeded" });
         }
 
-        const actorId = await authenticate(opts.ctx, req.headers.authorization, opts.authConfig);
+        const { actorId, scope } = await authenticate(opts.ctx, req.headers.authorization, opts.authConfig);
+        const restricted = scope.readOnly === true || scope.projectIds !== undefined;
+        if (restricted && !opts.scopedBehaviors) {
+          console.error("[stamm-http] a scoped key was presented but no scopedBehaviors is configured; refusing");
+          return sendJson(res, 500, { error: "internal error" });
+        }
 
-        const server = createStammServer(opts.behaviors, { actorId });
+        const server = createStammServer(restricted ? opts.scopedBehaviors!(scope) : opts.behaviors, { actorId, scope: restricted ? scope : undefined });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         res.on("close", () => {
           void transport.close();

@@ -77,6 +77,7 @@ export interface UserCredentialsTable {
   key_id: string;
   algorithm: string;
   public_key: string; // JSON text: public JWK
+  scope: string; // JSON text: KeyScope ("{}" = unrestricted)
   created_at: string;
   revoked_at: string | null;
 }

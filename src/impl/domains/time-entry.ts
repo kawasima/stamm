@@ -70,6 +70,7 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       const cursor = decodeCursor(args.pagination?.cursor);
       let q = db.selectFrom("time_entries").selectAll();
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
+      if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (args.issueId) q = q.where("issue_id", "=", args.issueId);
       if (effectiveUserId) q = q.where("user_id", "=", effectiveUserId);
       if (args.activityId) q = q.where("activity_id", "=", args.activityId);
@@ -103,6 +104,7 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       const effectiveUserId = ownOnly ? args.actorId : args.userId;
       let q = db.selectFrom("time_entries");
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
+      if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (args.issueId) q = q.where("issue_id", "=", args.issueId);
       if (effectiveUserId) q = q.where("user_id", "=", effectiveUserId);
       if (args.spentOnFrom) q = q.where("spent_on", ">=", args.spentOnFrom);

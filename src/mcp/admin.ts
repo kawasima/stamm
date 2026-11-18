@@ -94,8 +94,10 @@ function registerAdminOp(
   description: string,
   map: ResourceMap,
   actorId: string | undefined,
-  annotations?: ToolAnnotations,
+  annotations: ToolAnnotations | undefined,
+  allow: (name: string, readOnly: boolean) => boolean,
 ): void {
+  if (!allow(`admin_${op}`, annotations?.readOnlyHint === true)) return;
   server.registerTool(
     `admin_${op}`,
     {
@@ -120,10 +122,15 @@ function registerAdminOp(
   );
 }
 
-export function registerAdminTools(server: McpServer, behaviors: Behaviors, actorId?: string): void {
-  registerAdminOp(server, behaviors, "create", `Create a config resource (${RESOURCE_LIST}). Set params.resource and that resource's create fields.`, CREATE, actorId);
-  registerAdminOp(server, behaviors, "get", `Get a config resource by ID (${RESOURCE_LIST}).`, GET, actorId, { readOnlyHint: true });
-  registerAdminOp(server, behaviors, "update", `Update a config resource (${RESOURCE_LIST}).`, UPDATE, actorId, { idempotentHint: true });
-  registerAdminOp(server, behaviors, "delete", `Delete a config resource (${RESOURCE_LIST}).`, DELETE, actorId, { destructiveHint: true });
-  registerAdminOp(server, behaviors, "list", `List a config resource (${RESOURCE_LIST}).`, LIST, actorId, { readOnlyHint: true });
+export function registerAdminTools(
+  server: McpServer,
+  behaviors: Behaviors,
+  actorId?: string,
+  allow: (name: string, readOnly: boolean) => boolean = () => true,
+): void {
+  registerAdminOp(server, behaviors, "create", `Create a config resource (${RESOURCE_LIST}). Set params.resource and that resource's create fields.`, CREATE, actorId, undefined, allow);
+  registerAdminOp(server, behaviors, "get", `Get a config resource by ID (${RESOURCE_LIST}).`, GET, actorId, { readOnlyHint: true }, allow);
+  registerAdminOp(server, behaviors, "update", `Update a config resource (${RESOURCE_LIST}).`, UPDATE, actorId, { idempotentHint: true }, allow);
+  registerAdminOp(server, behaviors, "delete", `Delete a config resource (${RESOURCE_LIST}).`, DELETE, actorId, { destructiveHint: true }, allow);
+  registerAdminOp(server, behaviors, "list", `List a config resource (${RESOURCE_LIST}).`, LIST, actorId, { readOnlyHint: true }, allow);
 }

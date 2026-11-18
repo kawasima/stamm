@@ -198,6 +198,11 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_relations").selectAll().where("issue_id", "=", issueId);
       if (relationType) q = q.where("relation_type", "=", relationType);
+      if (ctx.scope?.projectIds) {
+        // Don't reveal links to issues outside the key's projects.
+        const scoped = ctx.scope.projectIds;
+        q = q.where("related_issue_id", "in", (eb) => eb.selectFrom("issues").select("id").where("project_id", "in", scoped));
+      }
       if (cursor) q = q.where("id", ">", cursor);
       const rows = await q.orderBy("id").limit(limit + 1).execute();
       const page = buildPage(rows.map((r) => relationCodec.decode(r)), (r) => r.id, limit);

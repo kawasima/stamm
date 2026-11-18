@@ -4,6 +4,7 @@ import { createTestDb } from "../impl/test-db.js";
 import { makeCtx } from "../impl/ctx.js";
 import { configBehaviors } from "../impl/domains/config.js";
 import { credentialBehaviors } from "../impl/domains/credentials.js";
+import { projectBehaviors } from "../impl/domains/project.js";
 import { UnauthorizedError } from "../impl/errors.js";
 import { authenticate } from "./auth.js";
 
@@ -42,13 +43,34 @@ describe("authenticate", () => {
   it("accepts a valid token and returns the userId", async () => {
     const { ctx, alice, issued } = await world();
     const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m" });
-    expect(await authenticate(ctx, `Bearer ${token}`)).toBe(alice.id);
+    expect((await authenticate(ctx, `Bearer ${token}`)).actorId).toBe(alice.id);
+  });
+
+  it("returns the scope of the key that signed the token", async () => {
+    const { ctx, creds, admin, alice, issued, db } = await world();
+    const proj = await projectBehaviors(ctx).createProject({ actorId: admin.id, identifier: "p", name: "P" });
+    const scoped = await creds.issueUserKey({ actorId: admin.id, userId: alice.id, scope: { readOnly: true, projectIds: [proj.id] } });
+
+    const unscopedToken = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m" });
+    expect((await authenticate(ctx, `Bearer ${unscopedToken}`)).scope).toEqual({});
+    // no kid: the verifying key decides, so the scoped key's scope still applies
+    const scopedToken = await signEdDSA(scoped.privateKey, { sub: alice.id, exp: "5m" });
+    expect((await authenticate(ctx, `Bearer ${scopedToken}`)).scope).toEqual({ readOnly: true, projectIds: [proj.id] });
+    await db.destroy();
+  });
+
+  it("rejects a token whose stored scope no longer parses instead of treating it as unrestricted", async () => {
+    const { ctx, alice, issued, db } = await world();
+    await db.updateTable("user_credentials").set({ scope: '{"projectIds":[]}' }).where("key_id", "=", issued.keyId).execute();
+    const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m" });
+    await expect(authenticate(ctx, `Bearer ${token}`)).rejects.toBeInstanceOf(UnauthorizedError);
+    await db.destroy();
   });
 
   it("honors optional issuer/audience when configured", async () => {
     const { ctx, alice, issued } = await world();
     const token = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m", iss: "stamm", aud: "clients" });
-    expect(await authenticate(ctx, `Bearer ${token}`, { issuer: "stamm", audience: "clients" })).toBe(alice.id);
+    expect((await authenticate(ctx, `Bearer ${token}`, { issuer: "stamm", audience: "clients" })).actorId).toBe(alice.id);
     const wrong = await signEdDSA(issued.privateKey, { sub: alice.id, kid: issued.keyId, exp: "5m", iss: "evil" });
     await expect(authenticate(ctx, `Bearer ${wrong}`, { issuer: "stamm" })).rejects.toBeInstanceOf(UnauthorizedError);
   });

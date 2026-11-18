@@ -61,6 +61,7 @@ export function activityBehaviors(ctx: Ctx): Pick<Behaviors, ActivityMethods> {
         if (targetId) q = q.where("target_id", "=", targetId);
         if (occurredAfter) q = q.where("occurred_at", ">=", occurredAfter);
         if (occurredBefore) q = q.where("occurred_at", "<=", occurredBefore);
+        if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
         if (!isAdmin) {
           // Project-level scoping, same rule as canReadProject: member, or not private.
           q = q.where((eb) =>

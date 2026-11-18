@@ -239,6 +239,14 @@ admin id and database path filled in. To mint keys for more users, an admin call
 `user_key_issue` tool (over either transport); the private key is returned
 exactly once.
 
+A key can be issued with a `scope` to hand to an autonomous agent: `{ "readOnly": true }`
+limits it to read tools, and `{ "projectIds": ["<id>", ...] }` confines it to those
+projects. A scope only narrows the user's own rights. A read-only key can never write,
+even for an admin user; a project-limited key never acts as a global admin, sees nothing
+outside its projects, and may use only the audited tools listed in
+`src/mcp/scope.ts` (the others are not even listed). Scopes apply to HTTP keys only; the
+stdio transport is trusted and unscoped.
+
 Sign a request token from an issued private JWK (using [jose](https://github.com/panva/jose)):
 
 ```js

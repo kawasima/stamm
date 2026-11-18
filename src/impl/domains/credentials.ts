@@ -1,8 +1,8 @@
 import { generateKeyPair, exportJWK } from "jose";
-import { UserCredential } from "../../schema/index.js";
+import { KeyScope, UserCredential } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { NotFoundError } from "../errors.js";
+import { NotFoundError, ValidationError } from "../errors.js";
 import { assertGlobalAdmin } from "../permissions.js";
 
 type CredentialMethods = "issueUserKey" | "revokeUserKey" | "listUserKeys";
@@ -18,10 +18,18 @@ export function credentialBehaviors(ctx: Ctx): Pick<Behaviors, CredentialMethods
   const db = ctx.db;
 
   return {
-    issueUserKey: async ({ actorId, userId }) => {
+    issueUserKey: async ({ actorId, userId, scope: rawScope }) => {
       await assertGlobalAdmin(ctx, actorId);
       const user = await db.selectFrom("users").select("id").where("id", "=", userId).executeTakeFirst();
       if (!user) throw new NotFoundError("User", userId);
+      // Normalise so "no restriction" is always stored as {} and a typo'd project
+      // id can't silently produce a key that matches nothing.
+      const scope = KeyScope.parse(rawScope ?? {});
+      if (scope.projectIds) {
+        const found = await db.selectFrom("projects").select("id").where("id", "in", scope.projectIds).execute();
+        const missing = scope.projectIds.filter((id) => !found.some((f) => f.id === id));
+        if (missing.length) throw new ValidationError(`Unknown project id(s) in scope: ${missing.join(", ")}`);
+      }
 
       const { publicKey, privateKey } = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
       const publicJwk = await exportJWK(publicKey);
@@ -36,6 +44,7 @@ export function credentialBehaviors(ctx: Ctx): Pick<Behaviors, CredentialMethods
           key_id: keyId,
           algorithm: "EdDSA",
           public_key: JSON.stringify(publicJwk),
+          scope: JSON.stringify(scope),
           created_at: ctx.now(),
           revoked_at: null,
         })
@@ -45,6 +54,7 @@ export function credentialBehaviors(ctx: Ctx): Pick<Behaviors, CredentialMethods
         userId,
         keyId,
         algorithm: "EdDSA",
+        scope,
         publicKey: publicJwk as Record<string, unknown>,
         privateKey: privateJwk as Record<string, unknown>,
       };
@@ -76,6 +86,7 @@ export function credentialBehaviors(ctx: Ctx): Pick<Behaviors, CredentialMethods
           userId: r.user_id,
           keyId: r.key_id,
           algorithm: r.algorithm,
+          scope: JSON.parse(r.scope),
           createdAt: r.created_at,
           ...(r.revoked_at ? { revokedAt: r.revoked_at } : {}),
         }),

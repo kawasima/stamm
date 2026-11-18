@@ -18,18 +18,22 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise<void>((r) => s.close(() => r()))));
 });
 
-async function start() {
+async function start(opts: { scoped?: boolean } = { scoped: true }) {
   const db = await createTestDb();
   const ctx = makeCtx(db);
   const behaviors = createSqlBehaviors(db);
   const seed = await ensureBootstrapped(behaviors);
   if (!seed) throw new Error("expected a fresh seed");
   const keys = await issueSeedKeys(behaviors, seed);
-  const server = createHttpServer({ behaviors, ctx });
+  const server = createHttpServer({
+    behaviors,
+    ctx,
+    ...(opts.scoped ? { scopedBehaviors: (scope) => createSqlBehaviors(db, { scope }) } : {}),
+  });
   servers.push(server);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   const port = (server.address() as AddressInfo).port;
-  return { port, seed, keys };
+  return { port, seed, keys, behaviors };
 }
 
 async function tokenFor(userId: string, key: IssuedCredential): Promise<string> {
@@ -67,6 +71,29 @@ describe("createHttpServer", () => {
     const memberClient = await connect(port, await tokenFor(seed.memberId, keys.memberKey));
     const memberResult = await memberClient.callTool({ name: "user_key_list", arguments: { userId: seed.memberId } });
     expect(memberResult.isError).toBe(true);
+  });
+
+  it("serves a read-only key a read-only tool surface and refuses its writes", async () => {
+    const { port, seed, behaviors } = await start();
+    const key = await behaviors.issueUserKey({ actorId: seed.adminId, userId: seed.memberId, scope: { readOnly: true } });
+    const client = await connect(port, await tokenFor(seed.memberId, key));
+
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain("issue_search");
+    expect(names).not.toContain("issue_create");
+    expect((await client.callTool({ name: "issue_search", arguments: { filter: {}, pagination: { limit: 5 } } })).isError).toBeFalsy();
+    expect((await client.callTool({ name: "issue_create", arguments: {} })).isError).toBe(true);
+  });
+
+  it("refuses a scoped key rather than serving it unrestricted when scopedBehaviors is not configured", async () => {
+    const { port, seed, behaviors } = await start({});
+    const key = await behaviors.issueUserKey({ actorId: seed.adminId, userId: seed.memberId, scope: { readOnly: true } });
+    const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${await tokenFor(seed.memberId, key)}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect(res.status).toBe(500);
   });
 
   it("rejects an unauthenticated request with 401", async () => {
