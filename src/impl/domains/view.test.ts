@@ -4,6 +4,8 @@ import { makeCtx } from "../ctx.js";
 import { configBehaviors } from "./config.js";
 import { projectBehaviors } from "./project.js";
 import { viewBehaviors } from "./view.js";
+import { issueBehaviors } from "./issue.js";
+import { NotFoundError } from "../errors.js";
 
 async function world() {
   const db = await createTestDb();
@@ -11,14 +13,23 @@ async function world() {
   const config = configBehaviors(ctx);
   const project = projectBehaviors(ctx);
   const views = viewBehaviors(ctx);
+  const issues = issueBehaviors(ctx);
 
   const admin = await config.createUser({ actorId: "boot", login: "admin", email: "a@x.io", displayName: "Admin", kind: "admin" });
-  const role = await config.createRole({ actorId: admin.id, name: "Lead", permissions: ["view.manage"], issuesVisibility: "all" });
+  const role = await config.createRole({ actorId: admin.id, name: "Lead", permissions: ["view.manage", "issue.create"], issuesVisibility: "all" });
   const proj = await project.createProject({ actorId: admin.id, identifier: "proj", name: "P" });
   const alice = await config.createUser({ actorId: admin.id, login: "alice", email: "al@x.io", displayName: "Alice" });
   const bob = await config.createUser({ actorId: admin.id, login: "bob", email: "b@x.io", displayName: "Bob" });
   await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: alice.id, roleIds: [role.id] });
-  return { db, views, admin, alice, bob, proj };
+  await config.createStatus({ actorId: admin.id, name: "Todo", category: "todo", sortOrder: 0 });
+  const priority = await config.createPriority({ actorId: admin.id, name: "Normal" });
+  const type = await config.createIssueType({ actorId: admin.id, name: "Bug" });
+  const mk = async (projectId: string, subject: string) =>
+    (await issues.createIssue({ actorId: admin.id, projectId, issueTypeId: type.id, priorityId: priority.id, subject })).id;
+  const [i1, i2, i3] = [await mk(proj.id, "one"), await mk(proj.id, "two"), await mk(proj.id, "three")];
+  const other = await project.createProject({ actorId: admin.id, identifier: "other", name: "Other" });
+  const foreign = await mk(other.id, "elsewhere");
+  return { db, views, admin, alice, bob, proj, i1, i2, i3, foreign };
 }
 
 describe("saved views", () => {
@@ -67,30 +78,54 @@ describe("board card ordering", () => {
 
   it("orders cards and inserts between neighbors", async () => {
     const w = await board();
-    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1", position: 1 });
-    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i2", position: 2 });
-    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i3", beforeIssueId: "i2" });
+    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i1, position: 1 });
+    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i2, position: 2 });
+    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i3, beforeIssueId: w.i2 });
 
     const { positions } = await w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id });
-    expect(positions.map((p) => p.issueId)).toEqual(["i1", "i3", "i2"]);
+    expect(positions.map((p) => p.issueId)).toEqual([w.i1, w.i3, w.i2]);
 
     // re-place i1 after i2: it lands at the end
-    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1", afterIssueId: "i2" });
+    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i1, afterIssueId: w.i2 });
     const after = await w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id });
-    expect(after.positions.map((p) => p.issueId)).toEqual(["i3", "i2", "i1"]);
+    expect(after.positions.map((p) => p.issueId)).toEqual([w.i3, w.i2, w.i1]);
     await w.db.destroy();
   });
 
   it("requires exactly one slot specifier", async () => {
     const w = await board();
-    await expect(w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1" })).rejects.toThrow();
-    await expect(w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1", position: 1, beforeIssueId: "i2" })).rejects.toThrow();
+    await expect(w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i1 })).rejects.toThrow();
+    await expect(w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i1, position: 1, beforeIssueId: w.i2 })).rejects.toThrow();
+    await w.db.destroy();
+  });
+
+  it("rejects a card that is not an issue of the view's project", async () => {
+    const w = await board();
+    await expect(
+      w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.foreign, position: 1 }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "does-not-exist", position: 1 }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect((await w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id })).positions).toEqual([]);
+    await w.db.destroy();
+  });
+
+  it("does not let another member reorder someone else's private board", async () => {
+    const w = await board();
+    const role = (await w.db.selectFrom("roles").select("id").where("name", "=", "Lead").executeTakeFirstOrThrow()).id;
+    // bob is a member with view.manage, but the board is alice's private view
+    await projectBehaviors(makeCtx(w.db)).addProjectMember({ actorId: w.admin.id, projectId: w.proj.id, userId: w.bob.id, roleIds: [role] });
+    const priv = await w.views.createProjectView({ actorId: w.alice.id, projectId: w.proj.id, ownerId: w.alice.id, name: "Private", layout: "board", filter: {}, visibility: "private" });
+    await expect(
+      w.views.moveIssueOnBoard({ actorId: w.bob.id, viewId: priv.id, issueId: w.i1, position: 1 }),
+    ).rejects.toBeInstanceOf(NotFoundError);
     await w.db.destroy();
   });
 
   it("clears positions when its view is deleted", async () => {
     const w = await board();
-    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: "i1", position: 1 });
+    await w.views.moveIssueOnBoard({ actorId: w.alice.id, viewId: w.view.id, issueId: w.i1, position: 1 });
     await w.views.deleteProjectView({ actorId: w.alice.id, viewId: w.view.id });
     await expect(w.views.listBoardPositions({ actorId: w.alice.id, viewId: w.view.id })).rejects.toThrow();
     await w.db.destroy();

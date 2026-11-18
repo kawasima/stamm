@@ -95,6 +95,11 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
     moveIssueOnBoard: async ({ actorId, viewId, issueId, beforeIssueId, afterIssueId, position }) => {
       const view = await load(viewId);
       await assertCanWrite(ctx, view.projectId, actorId, "view.manage");
+      // Reordering someone's private view needs the same access as reading it, and
+      // the card must be an issue of this view's project, not an arbitrary id.
+      await assertCanReadView(view, actorId);
+      const card = await db.selectFrom("issues").select("project_id").where("id", "=", issueId).executeTakeFirst();
+      if (!card || card.project_id !== view.projectId) throw new NotFoundError("Issue", issueId);
 
       const specifiers = [beforeIssueId, afterIssueId, position].filter((v) => v !== undefined);
       if (specifiers.length !== 1) {
