@@ -77,6 +77,31 @@ describe("write authorization — cross-resource writes respect the target's acc
     await w.db.destroy();
   });
 
+  it("forbids a non-member from transitioning an issue even when the rule allows any member", async () => {
+    const w = await world();
+    const doing = await w.config.createStatus({ actorId: w.admin.id, name: "Doing", category: "in_progress", sortOrder: 1 });
+    const todo = (await w.db.selectFrom("statuses").select("id").where("name", "=", "Todo").executeTakeFirstOrThrow()).id;
+    const wf = (await import("./workflow-config.js")).workflowConfigBehaviors(makeCtx(w.db));
+    // empty roleIds = "any member"
+    for (const projectId of [w.projA.id, w.projB.id]) {
+      await wf.setWorkflowTransitions({ actorId: w.admin.id, projectId, issueTypeId: w.type.id, transitions: [{ fromStatusId: todo, toStatusId: doing.id, roleIds: [] }] });
+    }
+    const outsider = await w.config.createUser({ actorId: w.admin.id, login: "eve", email: "e@x.io", displayName: "Eve" });
+
+    // public project: visible but not a member -> Forbidden
+    await expect(
+      w.issues.transitionIssueStatus({ actorId: outsider.id, issueId: w.aliceIssue.id, toStatusId: doing.id }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    // private project: existence hidden -> NotFound
+    await expect(
+      w.issues.transitionIssueStatus({ actorId: outsider.id, issueId: w.secretIssue.id, toStatusId: doing.id }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    // a member is still allowed
+    const moved = await w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: w.aliceIssue.id, toStatusId: doing.id });
+    expect(moved.statusId).toBe(doing.id);
+    await w.db.destroy();
+  });
+
   it("still allows a member to watch and link within their own project", async () => {
     const w = await world();
     const other = await w.issues.createIssue({ actorId: w.alice.id, projectId: w.projA.id, issueTypeId: w.type.id, priorityId: w.priority.id, subject: "Other" });

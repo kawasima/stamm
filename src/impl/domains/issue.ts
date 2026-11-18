@@ -15,7 +15,7 @@ import { IssueStatusChange, IssueScheduleChange, IssueEstimationChange } from ".
 import type { Issue as IssueT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { NotFoundError } from "../errors.js";
+import { ForbiddenError, NotFoundError } from "../errors.js";
 import { sql } from "kysely";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
@@ -301,9 +301,14 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     },
 
     transitionIssueStatus: async ({ actorId, issueId, toStatusId }) => {
-      const issue = await loadIssue(issueId);
+      const issue = await seenOrNotFound(actorId, await loadIssue(issueId));
       const fromStatusId = issue.statusId;
       if (!(await isGlobalAdmin(ctx, actorId))) {
+        // A workflow rule with empty roleIds means "any member", so membership
+        // itself has to be checked here; the rule check below doesn't do it.
+        if (!(await isMember(ctx, issue.projectId, actorId))) {
+          throw new ForbiddenError(`User ${actorId} is not a member of project ${issue.projectId}`);
+        }
         const roleIds = await roleIdsOf(ctx, issue.projectId, actorId);
         await assertTransitionAllowed(ctx, { projectId: issue.projectId, issueTypeId: issue.issueTypeId, fromStatusId }, toStatusId, roleIds);
       }
