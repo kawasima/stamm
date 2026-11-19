@@ -37,7 +37,7 @@ What the tools cover today (one MCP tool per operation unless noted):
   and predictability metrics; deleting an issue removes the issue but preserves
   its event history (the deletion is itself recorded on the timeline).
 - **Issue relations** — relate / unrelate / list (blocks, relates-to, …).
-- **Comments** — add / edit / delete / list, with visibility.
+- **Comments** — add / edit / delete / list, with visibility. `@login` mentions a project member (see Notifications).
 - **Attachments** — attach / get / delete / list by reference (binary upload is
   not supported in v1).
 - **Projects** — CRUD; archive / unarchive; visibility; parent / sub-projects;
@@ -53,7 +53,14 @@ What the tools cover today (one MCP tool per operation unless noted):
   private or shared: CRUD, plus manual board-card ordering (reorder by
   before / after / position).
 - **Time tracking** — log / read / update / delete entries; list; summary.
-- **Notifications** — list; unread count; mark one or all read.
+- **Notifications** — list; unread count; mark one or all read. A comment that
+  contains `@login` sends that user one `issue.mentioned` notification, whose
+  target is the comment, instead of the generic `issue.commented`. Only project
+  members who can read the issue are notified; any other mention stays plain
+  text. Editing a comment notifies only newly added mentions. Logins are unique
+  (case-insensitively), and agents learn of mentions by polling
+  `notification_list` — there is no push yet. A project-limited key may use the
+  notification tools; they show only its projects.
 - **Activity feed** — the append-only timeline every mutation writes to; list it
   newest-first (filter by project, user, action, target, or time range) or fetch
   one entry by id. It is also the source of each entity's created / updated

@@ -8,8 +8,7 @@ import type { KeyScope } from "../schema/index.js";
  * until someone has audited it.
  *
  * Left out deliberately: attachments (non-issue targets skip the read check),
- * notifications (not filtered by project), templates and workflow reads (no
- * project check), issue_move (crosses projects), and every global/admin tool.
+ * templates and workflow reads (no project check), issue_move (crosses projects), and every global/admin tool.
  */
 export const PROJECT_SCOPED_TOOLS: ReadonlySet<string> = new Set([
   "issue_get", "issue_get_detail", "issue_get_by_key", "issue_search", "issue_children",
@@ -23,6 +22,8 @@ export const PROJECT_SCOPED_TOOLS: ReadonlySet<string> = new Set([
   "iteration_get", "iteration_list", "iteration_progress",
   "time_get", "time_list", "time_summary", "time_log", "time_update", "time_delete",
   "activity_list", "activity_get",
+  // A notification inbox is the key user's own and is filtered by the key's projects.
+  "notification_list", "notification_unread_count", "notification_read", "notification_read_all",
 ]);
 
 /** Whether a key with `scope` may use the tool `name`. `readOnly` is the tool's own read-only flag. */

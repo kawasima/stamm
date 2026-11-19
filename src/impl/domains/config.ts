@@ -12,7 +12,7 @@ import {
 } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { NotFoundError } from "../errors.js";
+import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertGlobalAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
@@ -160,6 +160,17 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
     return (u: z.infer<typeof User>) => projectUser(u, viewerId, viewerIsAdmin) as z.infer<typeof User>;
   };
   const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection });
+  // A login names exactly one user (mentions rely on it). Checked here so the
+  // caller gets a ConflictError instead of a raw unique-index failure.
+  const assertLoginFree = async (login: unknown): Promise<void> => {
+    if (typeof login !== "string") return;
+    const row = await ctx.db
+      .selectFrom("users")
+      .select("id")
+      .where((eb) => eb(eb.fn("lower", ["login"]), "=", login.toLowerCase()))
+      .executeTakeFirst();
+    if (row) throw new ConflictError(`Login "${login}" is already taken`);
+  };
   const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup" });
 
   return {
@@ -169,7 +180,9 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
     createIssueType: issueType.create, getIssueType: issueType.get, updateIssueType: issueType.update, deleteIssueType: issueType.remove, listIssueTypes: issueType.list,
     createCategory: category.create, getCategory: category.get, updateCategory: category.update, deleteCategory: category.remove, listCategories: category.list,
     createRole: role.create, getRole: role.get, updateRole: role.update, deleteRole: role.remove, listRoles: role.list,
-    createUser: user.create, getUser: user.get, updateUser: user.update, deleteUser: user.remove, listUsers: user.list,
+    createUser: async (args) => { await userGuard(ctx, args); await assertLoginFree(args.login); return user.create(args); },
+    getUser: user.get,
+    updateUser: user.update, deleteUser: user.remove, listUsers: user.list,
     createUserGroup: group.create, getUserGroup: group.get, updateUserGroup: group.update, deleteUserGroup: group.remove, listUserGroups: group.list,
   } as Pick<Behaviors, ConfigMethods>;
 }

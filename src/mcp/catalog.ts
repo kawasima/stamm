@@ -36,7 +36,7 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "issue_relations", description: "List relations for an issue", contract: B.ListIssueRelations, behavior: "listIssueRelations", annotations: RO },
 
   // --- Comments ---
-  { name: "comment_add", description: "Add a comment to an issue", contract: B.CreateComment, behavior: "createComment" },
+  { name: "comment_add", description: "Add a comment to an issue. Write @login to mention a project member; they get an issue.mentioned notification", contract: B.CreateComment, behavior: "createComment" },
   { name: "comment_get", description: "Get a comment by ID", contract: B.GetComment, behavior: "getComment", annotations: RO },
   { name: "comment_update", description: "Edit a comment", contract: B.UpdateComment, behavior: "updateComment", annotations: IDEM },
   { name: "comment_delete", description: "Delete a comment", contract: B.DeleteComment, behavior: "deleteComment", annotations: DESTRUCTIVE },

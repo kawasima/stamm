@@ -4,7 +4,7 @@ import type { Ctx } from "../ctx.js";
 import { ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
-import { isGlobalAdmin } from "../permissions.js";
+import { isGlobalAdmin, scopeAllowsProject } from "../permissions.js";
 
 type NotificationMethods = "listNotifications" | "getUnreadNotificationCount" | "markNotificationRead" | "markAllNotificationsRead";
 
@@ -28,6 +28,7 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("notifications").selectAll().where("recipient_id", "=", recipientId);
+      if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (projectId) q = q.where("project_id", "=", projectId);
       if (eventType) q = q.where("event_type", "=", eventType);
       if (isRead !== undefined) {
@@ -44,10 +45,12 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
 
     getUnreadNotificationCount: async ({ actorId, recipientId }) => {
       await assertOwnInbox(actorId, recipientId);
-      const row = await db
+      let counted = db
         .selectFrom("notifications")
         .select((eb) => eb.fn.countAll().as("cnt"))
-        .where("recipient_id", "=", recipientId)
+        .where("recipient_id", "=", recipientId);
+      if (ctx.scope?.projectIds) counted = counted.where("project_id", "in", ctx.scope.projectIds);
+      const row = await counted
         .where(({ exists, not, selectFrom }) =>
           not(exists(selectFrom("notification_reads").select("id").whereRef("notification_reads.notification_id", "=", "notifications.id"))),
         )
@@ -56,8 +59,9 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
     },
 
     markNotificationRead: async ({ actorId, notificationId }) => {
-      const exists = await db.selectFrom("notifications").select(["id", "recipient_id"]).where("id", "=", notificationId).executeTakeFirst();
-      if (!exists) throw new NotFoundError("Notification", notificationId);
+      const exists = await db.selectFrom("notifications").select(["id", "recipient_id", "project_id"]).where("id", "=", notificationId).executeTakeFirst();
+      // A project-limited key does not see notifications of other projects at all.
+      if (!exists || !scopeAllowsProject(ctx, exists.project_id)) throw new NotFoundError("Notification", notificationId);
       await assertOwnInbox(actorId, exists.recipient_id);
       const already = await db.selectFrom("notification_reads").selectAll().where("notification_id", "=", notificationId).executeTakeFirst();
       if (already) return readCodec.decode(already);
@@ -75,6 +79,7 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
         .where(({ exists, not, selectFrom }) =>
           not(exists(selectFrom("notification_reads").select("id").whereRef("notification_reads.notification_id", "=", "notifications.id"))),
         );
+      if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (projectId) q = q.where("project_id", "=", projectId);
       const unread = await q.execute();
       if (unread.length === 0) return { markedCount: 0 };

@@ -4,7 +4,7 @@ import type { Ctx } from "../ctx.js";
 import { ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
-import { notifyIssueEvent } from "../notifications.js";
+import { notifyIssueEvent, notifyMentions, resolveMentionRecipients } from "../notifications.js";
 import { assertCanWrite, assertCanReadIssue, canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { inTransaction } from "../tx.js";
@@ -23,6 +23,10 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
   const issueAuthor = async (issueId: string): Promise<string> => {
     const row = await db.selectFrom("issues").select("author_id").where("id", "=", issueId).executeTakeFirst();
     return row?.author_id ?? "";
+  };
+  const issueKey = async (issueId: string): Promise<string> => {
+    const row = await db.selectFrom("issues").select(["key", "number"]).where("id", "=", issueId).executeTakeFirst();
+    return row ? `${row.key}-${row.number}` : issueId;
   };
   const loadComment = async (commentId: string): Promise<Comment> => {
     const row = await db.selectFrom("comments").selectAll().where("id", "=", commentId).executeTakeFirst();
@@ -51,10 +55,15 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       await assertCanWrite(ctx, projectId, actorId, "comment.create");
       const comment = Comment.parse({ id: ctx.genId(), occurredAt: ctx.now(), issueId, authorId: actorId, body, visibility: visibility ?? "public" });
       const authorId = await issueAuthor(issueId);
+      // Resolved before the transaction: it reads through the normal connection.
+      const mentioned = await resolveMentionRecipients(ctx, { projectId, issueId, actorId, body });
+      const key = mentioned.length > 0 ? await issueKey(issueId) : "";
       await inTransaction(db, async (trx) => {
         await trx.insertInto("comments").values(codec.encode(comment) as never).execute();
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "commented", targetType: "issue", targetId: issueId, occurredAt: comment.occurredAt });
-        await notifyIssueEvent(ctx, trx, { projectId, issueId, authorId, eventType: "issue.commented", title: "New comment", actorId, occurredAt: comment.occurredAt });
+        // A mentioned user gets the mention, not also a generic "commented".
+        await notifyMentions(ctx, trx, { projectId, issueKey: key, commentId: comment.id, recipients: mentioned, occurredAt: comment.occurredAt });
+        await notifyIssueEvent(ctx, trx, { projectId, issueId, authorId, eventType: "issue.commented", title: "New comment", actorId, occurredAt: comment.occurredAt, exclude: mentioned });
       });
       return comment;
     },
@@ -77,7 +86,16 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       const current = await loadComment(commentId);
       await assertCanModify(actorId, current, "comment.update");
       const merged = Comment.parse({ ...current, body, ...(visibility !== undefined ? { visibility } : {}) });
-      await db.updateTable("comments").set(codec.encode(merged) as never).where("id", "=", commentId).execute();
+      // Only people newly mentioned by the edit are notified, so fixing a typo
+      // does not ping everyone again.
+      const projectId = await issueProjectId(current.issueId);
+      const before = new Set(await resolveMentionRecipients(ctx, { projectId, issueId: current.issueId, actorId, body: current.body }));
+      const added = (await resolveMentionRecipients(ctx, { projectId, issueId: current.issueId, actorId, body })).filter((id) => !before.has(id));
+      const key = added.length > 0 ? await issueKey(current.issueId) : "";
+      await inTransaction(db, async (trx) => {
+        await trx.updateTable("comments").set(codec.encode(merged) as never).where("id", "=", commentId).execute();
+        await notifyMentions(ctx, trx, { projectId, issueKey: key, commentId, recipients: added, occurredAt: ctx.now() });
+      });
       return merged;
     },
 

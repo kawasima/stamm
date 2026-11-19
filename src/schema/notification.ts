@@ -7,6 +7,7 @@ export const NotificationEventType = z.enum([
   "issue.status_changed",
   "issue.assigned",
   "issue.commented",
+  "issue.mentioned",
   "issue.closed",
   "issue.iteration_set",
   "milestone.created",

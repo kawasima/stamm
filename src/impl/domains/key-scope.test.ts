@@ -163,8 +163,8 @@ describe("key scope — MCP tool surface", () => {
     const w = await world();
     const scope = { projectIds: [w.a.id] };
     const tools = await names(w.as(scope), w.alice.id, scope);
-    for (const t of ["issue_get", "issue_search", "issue_update", "comment_add", "activity_list"]) expect(tools.has(t), t).toBe(true);
-    for (const t of ["admin_get", "admin_list", "user_key_issue", "user_key_list", "issue_move", "attachment_list", "notification_list", "template_list", "project_create"]) {
+    for (const t of ["issue_get", "issue_search", "issue_update", "comment_add", "activity_list", "notification_list", "notification_read"]) expect(tools.has(t), t).toBe(true);
+    for (const t of ["admin_get", "admin_list", "user_key_issue", "user_key_list", "issue_move", "attachment_list", "template_list", "project_create"]) {
       expect(tools.has(t), t).toBe(false);
     }
     // an unscoped connection still sees them all
@@ -178,6 +178,44 @@ describe("key scope — MCP tool surface", () => {
     const client = await connect(w.as(scope), { actorId: w.alice.id, scope } as never);
     const res = await client.callTool({ name: "issue_create", arguments: { projectId: w.a.id, issueTypeId: w.base.issueTypeId, priorityId: w.base.priorityId, subject: "x" } });
     expect(res.isError).toBe(true);
+    await w.db.destroy();
+  });
+});
+
+describe("key scope — notifications and mentions", () => {
+  async function withMentions() {
+    const w = await world();
+    const bob = await w.full.createUser({ actorId: w.admin.id, login: "bob", email: "b@x.io", displayName: "Bob" });
+    const roles = await w.full.listRoles({ pagination: { limit: 10 } });
+    for (const p of [w.a, w.b]) await w.full.addProjectMember({ actorId: w.admin.id, projectId: p.id, userId: bob.id, roleIds: [roles.items[0]!.id] });
+    await w.full.createComment({ issueId: w.issueA.id, actorId: bob.id, body: "@alice in A" });
+    await w.full.createComment({ issueId: w.issueB.id, actorId: bob.id, body: "@alice in B" });
+    return { ...w, bob };
+  }
+
+  it("a project-limited key reads only its own projects' notifications and can count and mark them", async () => {
+    const w = await withMentions();
+    const scoped = w.as({ projectIds: [w.a.id] });
+    const list = await scoped.listNotifications({ actorId: w.alice.id, recipientId: w.alice.id, isRead: false, eventType: "issue.mentioned", pagination: { limit: 50 } });
+    expect(list.items.map((n) => n.projectId)).toEqual([w.a.id]);
+    expect((await scoped.getUnreadNotificationCount({ actorId: w.alice.id, recipientId: w.alice.id })).count).toBe(
+      (await scoped.listNotifications({ actorId: w.alice.id, recipientId: w.alice.id, pagination: { limit: 50 } })).items.length,
+    );
+    await scoped.markNotificationRead({ actorId: w.alice.id, notificationId: list.items[0]!.id });
+    // The unscoped view still has the other project's mention unread.
+    const rest = await w.full.listNotifications({ actorId: w.alice.id, recipientId: w.alice.id, isRead: false, eventType: "issue.mentioned", pagination: { limit: 50 } });
+    expect(rest.items.map((n) => n.projectId)).toEqual([w.b.id]);
+    await w.db.destroy();
+  });
+
+  it("a project-limited key cannot mark another project's notification read, and mark-all leaves it alone", async () => {
+    const w = await withMentions();
+    const scoped = w.as({ projectIds: [w.a.id] });
+    const other = (await w.full.listNotifications({ actorId: w.alice.id, recipientId: w.alice.id, eventType: "issue.mentioned", pagination: { limit: 50 } })).items.find((n) => n.projectId === w.b.id)!;
+    await expect(scoped.markNotificationRead({ actorId: w.alice.id, notificationId: other.id })).rejects.toBeInstanceOf(NotFoundError);
+    await scoped.markAllNotificationsRead({ actorId: w.alice.id, recipientId: w.alice.id });
+    const still = await w.full.listNotifications({ actorId: w.alice.id, recipientId: w.alice.id, isRead: false, pagination: { limit: 50 } });
+    expect(still.items.some((n) => n.id === other.id)).toBe(true);
     await w.db.destroy();
   });
 });
