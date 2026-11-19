@@ -17,6 +17,12 @@ export interface BridgeOptions {
   audience?: string;
   /** Lifetime of each signed token in seconds (default 60). */
   tokenTtlSec?: number;
+  /**
+   * Source addresses allowed to use the bridge; anything else gets 403. Required
+   * in practice whenever the bridge listens beyond loopback, because the bridge
+   * itself does not authenticate callers: it holds the key on their behalf.
+   */
+  allowFrom?: string[];
   /** Max request body in bytes (default 1 MiB). */
   maxBodyBytes?: number;
   fetch?: typeof fetch;
@@ -56,9 +62,16 @@ export function createBridge(opts: BridgeOptions): Server {
     res.end(JSON.stringify({ error: message }));
   };
 
+  const allowed = opts.allowFrom ? new Set(opts.allowFrom) : undefined;
+
   return createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       try {
+        if (allowed) {
+          // An IPv4 peer can show up as ::ffff:a.b.c.d on a dual-stack socket.
+          const peer = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+          if (!allowed.has(peer)) return fail(res, 403, "forbidden");
+        }
         let body: Buffer | undefined;
         if (req.method !== "GET" && req.method !== "HEAD") {
           const chunks: Buffer[] = [];

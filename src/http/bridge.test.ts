@@ -99,4 +99,15 @@ describe("createBridge", () => {
     const res = await fetch(`http://127.0.0.1:${port}/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" });
     expect(res.status).toBe(401);
   });
+
+  it("refuses callers outside the allowlist and serves those inside it", async () => {
+    const { upstream, keys } = await setup();
+    const denied = await listen(createBridge({ upstream, key: keys.adminKey as never, allowFrom: ["100.66.44.121"] }));
+    const res = await fetch(`http://127.0.0.1:${denied}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    expect(res.status).toBe(403);
+
+    const allowed = await listen(createBridge({ upstream, key: keys.adminKey as never, allowFrom: ["127.0.0.1"] }));
+    const client = await viaBridge(`http://127.0.0.1:${allowed}/mcp`);
+    expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+  });
 });
