@@ -279,6 +279,25 @@ curl -H "Authorization: Bearer $TOKEN" \
 MCP clients that support a remote (Streamable HTTP) server can connect by URL
 with the same `Authorization` header. Requests without a valid token get `401`.
 
+### Clients that can't sign tokens — the bridge
+
+Tokens live at most 15 minutes, so a client that can only send a static
+`Authorization` header (or one that runs in a VM and so can't use stdio against
+the host's database) needs something to sign for it. `stamm-bridge` runs next to
+the client, listens on loopback, signs a fresh token for every request and
+forwards it to the remote stamm:
+
+```sh
+# save the JSON that user_key_issue returned (userId, keyId, privateKey) to a 0600 file
+STAMM_URL=http://host:3000/mcp STAMM_KEY_FILE=./agent-key.json node dist/bin/stamm-bridge.js
+```
+
+The client then connects to `http://127.0.0.1:8787/mcp` with no headers
+(`STAMM_BRIDGE_PORT` changes the port). Anyone who can reach that port acts with
+the key's rights, so issue the key with a scope and keep the listener on loopback
+(it cannot be bound elsewhere). Use TLS between the bridge and stamm when the
+network between them is not trusted.
+
 ## Scripts
 
 | Command | Description |

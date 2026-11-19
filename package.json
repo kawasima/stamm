@@ -8,7 +8,8 @@
   "types": "dist/index.d.ts",
   "bin": {
     "stamm-mcp": "dist/bin/stamm-mcp.js",
-    "stamm-http": "dist/bin/stamm-http.js"
+    "stamm-http": "dist/bin/stamm-http.js",
+    "stamm-bridge": "dist/bin/stamm-bridge.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
