@@ -180,6 +180,11 @@ npm run mcp        # node dist/bin/stamm-mcp.js
 
 - `STAMM_DB` — path to the SQLite file (defaults to `./stamm.db`)
 - `STAMM_ACTOR` — pinned user id to act as (defaults to the bootstrapped member)
+- `STAMM_SCOPE` — optional JSON key scope, e.g. `{"readOnly":true,"projectIds":["<id>"]}`.
+  It has the same meaning as an HTTP key's scope. stdio opens the SQLite file
+  directly, so this guards against an agent touching the wrong project by mistake;
+  it does not stop an agent that can read the file itself. Use HTTP when the agent
+  must not have the database.
 
 To register stamm with a local MCP host, point it at the built entry point. The
 included `.mcp.json` does this for Claude Code:
