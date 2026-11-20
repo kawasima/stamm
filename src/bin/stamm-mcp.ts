@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createSqlBehaviors, makeSqlite, migrateToLatest } from "../impl/index.js";
 import { ensureBootstrapped } from "../impl/bootstrap.js";
 import { createStammServer } from "../mcp/server.js";
+import { buildInstructions } from "../mcp/instructions.js";
 import { isRestricted, parseScopeEnv } from "./stdio-scope.js";
 
 /**
@@ -51,7 +52,9 @@ async function main(): Promise<void> {
   }
   if (restricted) console.error(`[stamm] scope=${JSON.stringify(scope)}`);
 
-  const server = createStammServer(restricted ? createSqlBehaviors(db, { scope }) : behaviors, { actorId, scope: restricted ? scope : undefined });
+  const served = restricted ? createSqlBehaviors(db, { scope }) : behaviors;
+  const instructions = await buildInstructions(served, actorId);
+  const server = createStammServer(served, { actorId, scope: restricted ? scope : undefined, ...(instructions ? { instructions } : {}) });
   await server.connect(new StdioServerTransport());
 }
 

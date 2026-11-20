@@ -99,6 +99,8 @@ export interface ProjectsTable {
   identifier: string;
   name: string;
   description: string | null;
+  code_of_conduct: string | null;
+  code_of_conduct_updated_at: string | null;
 }
 
 export interface ProjectCategoriesTable {

@@ -5,6 +5,12 @@ export const Project = Resource.extend({
   identifier: Slug,
   name: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),
+  /**
+   * The project's Code of Conduct, as free text. stamm stores and delivers it;
+   * what it says is the project's own decision.
+   */
+  codeOfConduct: z.string().max(20000).optional(),
+  codeOfConductUpdatedAt: z.string().optional(),
 });
 
 export const ProjectHierarchy = Resource.extend({

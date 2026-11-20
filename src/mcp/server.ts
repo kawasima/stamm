@@ -17,10 +17,12 @@ export interface StammServerOptions {
    * behaviors were built with); this is the first of the two checks.
    */
   scope?: KeyScope;
+  /** Sent to the client on connect; see buildInstructions. */
+  instructions?: string;
 }
 
 export function createStammServer(behaviors: Behaviors, opts: StammServerOptions = {}): McpServer {
-  const server = new McpServer({ name: "stamm", version: "0.1.0" });
+  const server = new McpServer({ name: "stamm", version: "0.1.0" }, opts.instructions ? { instructions: opts.instructions } : undefined);
 
   const allow = (name: string, readOnly: boolean) => toolAllowed(opts.scope, name, readOnly);
   for (const def of SIMPLE_TOOLS) {

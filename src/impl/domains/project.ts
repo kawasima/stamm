@@ -91,7 +91,7 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       return projectCodec.decode(row);
     },
 
-    updateProject: async ({ actorId, projectId, name, description }) => {
+    updateProject: async ({ actorId, projectId, name, description, codeOfConduct }) => {
       await assertGlobalAdmin(ctx, actorId);
       const row = await db.selectFrom("projects").selectAll().where("id", "=", projectId).executeTakeFirst();
       if (!row) throw new NotFoundError("Project", projectId);
@@ -100,8 +100,15 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
         ...current,
         ...(name !== undefined ? { name } : {}),
         ...(description !== undefined ? { description } : {}),
+        ...(codeOfConduct !== undefined
+          ? codeOfConduct === ""
+            ? { codeOfConduct: undefined, codeOfConductUpdatedAt: undefined }
+            : { codeOfConduct, codeOfConductUpdatedAt: ctx.now() }
+          : {}),
       });
-      await db.updateTable("projects").set(projectCodec.encode(merged) as never).where("id", "=", projectId).execute();
+      // encode() omits undefined fields, so a removed CoC is nulled explicitly.
+      const cleared = codeOfConduct === "" ? { code_of_conduct: null, code_of_conduct_updated_at: null } : {};
+      await db.updateTable("projects").set({ ...projectCodec.encode(merged), ...cleared } as never).where("id", "=", projectId).execute();
       return merged;
     },
 

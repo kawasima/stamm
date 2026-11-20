@@ -96,6 +96,17 @@ describe("createHttpServer", () => {
     expect(res.status).toBe(500);
   });
 
+  it("hands the project's Code of Conduct to the client as instructions on connect", async () => {
+    const { port, seed, keys, behaviors } = await start();
+    const client0 = await connect(port, await tokenFor(seed.memberId, keys.memberKey));
+    expect(client0.getInstructions()).toBeUndefined();
+
+    const proj = await behaviors.createProject({ actorId: seed.adminId, identifier: "coc", name: "CoC" });
+    await behaviors.updateProject({ actorId: seed.adminId, projectId: proj.id, codeOfConduct: "MARKER-COC" });
+    const adminClient = await connect(port, await tokenFor(seed.adminId, keys.adminKey));
+    expect(adminClient.getInstructions()).toContain("MARKER-COC");
+  });
+
   it("rejects an unauthenticated request with 401", async () => {
     const { port } = await start();
     const res = await fetch(`http://127.0.0.1:${port}/mcp`, {

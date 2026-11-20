@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createStammServer } from "../mcp/server.js";
+import { buildInstructions } from "../mcp/instructions.js";
 import type { Behaviors } from "../mcp/behaviors.js";
 import type { Ctx } from "../impl/ctx.js";
 import { UnauthorizedError } from "../impl/errors.js";
@@ -121,7 +122,9 @@ export function createHttpServer(opts: HttpServerOptions): Server {
           return sendJson(res, 500, { error: "internal error" });
         }
 
-        const server = createStammServer(restricted ? opts.scopedBehaviors!(scope) : opts.behaviors, { actorId, scope: restricted ? scope : undefined });
+        const served = restricted ? opts.scopedBehaviors!(scope) : opts.behaviors;
+        const instructions = await buildInstructions(served, actorId);
+        const server = createStammServer(served, { actorId, scope: restricted ? scope : undefined, ...(instructions ? { instructions } : {}) });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         res.on("close", () => {
           void transport.close();

@@ -315,6 +315,12 @@ STAMM_URL=http://127.0.0.1:3000/mcp STAMM_KEY_FILE=./agent-key.json node dist/bi
 A non-loopback `STAMM_BRIDGE_HOST` without `STAMM_BRIDGE_ALLOW` is refused at
 startup. Issue the key with a scope, and keep stamm-http itself on loopback.
 
+### Code of Conduct
+
+A project can carry a Code of Conduct as free text (`project_update` with `codeOfConduct`, global admin only; an empty string removes it). stamm only stores and delivers it. It does not judge the content or whether a comment follows it.
+
+On connect, the server sends the Code of Conduct of the projects the key can see as MCP `instructions`, which the client adds to the agent's context. A key limited to a few projects gets those texts in full; with more than three, only the list of projects, and the agent reads each with `project_get`. The `comment_add` and `issue_create` descriptions also tell the agent to read it before writing. Whether a client puts `instructions` into the agent's context depends on the client.
+
 ## Scripts
 
 | Command | Description |

@@ -18,7 +18,7 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "issue_get_by_key", description: "Get an issue by its key (e.g. PROJ-123)", contract: B.GetIssueByKey, behavior: "getIssueByKey", annotations: RO },
   { name: "issue_search", description: "List issues with rich filtering, sorting, and pagination", contract: B.ListIssues, behavior: "listIssues", annotations: RO },
   { name: "issue_children", description: "List child issues (subtasks) of an issue", contract: B.ListChildIssues, behavior: "listChildIssues", annotations: RO },
-  { name: "issue_create", description: "Create a new issue (can set assignees, labels, milestone, etc. in one call)", contract: B.CreateIssue, behavior: "createIssue" },
+  { name: "issue_create", description: "Create a new issue. Read the project's Code of Conduct first (project_get) and follow it in the text (can set assignees, labels, milestone, etc. in one call)", contract: B.CreateIssue, behavior: "createIssue" },
   { name: "issue_delete", description: "Delete an issue", contract: B.DeleteIssue, behavior: "deleteIssue", annotations: DESTRUCTIVE },
   { name: "issue_move", description: "Move an issue to a different project", contract: B.MoveIssue, behavior: "moveIssue", annotations: IDEM },
   { name: "issue_transition", description: "Transition an issue to a new status (respects workflow rules)", contract: B.TransitionIssueStatus, behavior: "transitionIssueStatus", annotations: IDEM },
@@ -36,7 +36,7 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "issue_relations", description: "List relations for an issue", contract: B.ListIssueRelations, behavior: "listIssueRelations", annotations: RO },
 
   // --- Comments ---
-  { name: "comment_add", description: "Add a comment to an issue. Write @login to mention a project member; they get an issue.mentioned notification", contract: B.CreateComment, behavior: "createComment" },
+  { name: "comment_add", description: "Add a comment to an issue. Read the project's Code of Conduct first (project_get) and write the body so it follows it. Write @login to mention a project member; they get an issue.mentioned notification", contract: B.CreateComment, behavior: "createComment" },
   { name: "comment_get", description: "Get a comment by ID", contract: B.GetComment, behavior: "getComment", annotations: RO },
   { name: "comment_update", description: "Edit a comment", contract: B.UpdateComment, behavior: "updateComment", annotations: IDEM },
   { name: "comment_delete", description: "Delete a comment", contract: B.DeleteComment, behavior: "deleteComment", annotations: DESTRUCTIVE },
@@ -52,7 +52,7 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "project_create", description: "Create a project", contract: B.CreateProject, behavior: "createProject" },
   { name: "project_get", description: "Get a project by ID", contract: B.GetProject, behavior: "getProject", annotations: RO },
   { name: "project_get_by_identifier", description: "Get a project by its identifier", contract: B.GetProjectByIdentifier, behavior: "getProjectByIdentifier", annotations: RO },
-  { name: "project_update", description: "Update a project", contract: B.UpdateProject, behavior: "updateProject", annotations: IDEM },
+  { name: "project_update", description: "Update a project. codeOfConduct sets the project's Code of Conduct (empty string removes it)", contract: B.UpdateProject, behavior: "updateProject", annotations: IDEM },
   { name: "project_delete", description: "Delete a project", contract: B.DeleteProject, behavior: "deleteProject", annotations: DESTRUCTIVE },
   { name: "project_list", description: "List projects", contract: B.ListProjects, behavior: "listProjects", annotations: RO },
   { name: "project_archive", description: "Archive a project", contract: B.ArchiveProject, behavior: "archiveProject", annotations: IDEM },

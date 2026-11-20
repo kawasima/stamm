@@ -12,6 +12,7 @@ import * as customFields0009 from "./migrations/0009_custom_fields.js";
 import * as indexes0010 from "./migrations/0010_indexes.js";
 import * as credentialScope0011 from "./migrations/0011_credential_scope.js";
 import * as userLoginUnique0012 from "./migrations/0012_user_login_unique.js";
+import * as projectCoc0013 from "./migrations/0013_project_code_of_conduct.js";
 
 /** All migrations in order, keyed by a sortable name. */
 const MIGRATIONS: Record<string, Migration> = {
@@ -27,6 +28,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "0010_indexes": indexes0010,
   "0011_credential_scope": credentialScope0011,
   "0012_user_login_unique": userLoginUnique0012,
+  "0013_project_code_of_conduct": projectCoc0013,
 };
 
 class StaticMigrationProvider implements MigrationProvider {

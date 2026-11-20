@@ -44,6 +44,8 @@ export const UpdateProject = z.function()
     projectId: Id,
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(5000).optional(),
+    /** Replaces the Code of Conduct; an empty string removes it. */
+    codeOfConduct: z.string().max(20000).optional(),
   }))
   .returns(z.promise(Project));
 
