@@ -23,7 +23,8 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
   };
 
   return {
-    listNotifications: async ({ actorId, recipientId, projectId, eventType, isRead, pagination }) => {
+    listNotifications: async ({ actorId, recipientId: target, projectId, eventType, isRead, pagination }) => {
+      const recipientId = target ?? actorId;
       await assertOwnInbox(actorId, recipientId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
@@ -43,7 +44,8 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    getUnreadNotificationCount: async ({ actorId, recipientId }) => {
+    getUnreadNotificationCount: async ({ actorId, recipientId: target }) => {
+      const recipientId = target ?? actorId;
       await assertOwnInbox(actorId, recipientId);
       let counted = db
         .selectFrom("notifications")
@@ -70,7 +72,8 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
       return read;
     },
 
-    markAllNotificationsRead: async ({ actorId, recipientId, projectId }) => {
+    markAllNotificationsRead: async ({ actorId, recipientId: target, projectId }) => {
+      const recipientId = target ?? actorId;
       await assertOwnInbox(actorId, recipientId);
       let q = db
         .selectFrom("notifications")

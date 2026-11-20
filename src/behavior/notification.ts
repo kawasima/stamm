@@ -16,7 +16,8 @@ import { PaginatedResult } from "./common.js";
 export const ListNotifications = z.function()
   .args(z.object({
     actorId: Id,
-    recipientId: Id,
+    /** Defaults to the caller's own inbox. */
+    recipientId: Id.optional(),
     projectId: Id.optional(),
     eventType: NotificationEventType.optional(),
     isRead: z.boolean().optional(),
@@ -26,7 +27,7 @@ export const ListNotifications = z.function()
 
 /** Get unread notification count for a user (own recipientId, or admin). */
 export const GetUnreadNotificationCount = z.function()
-  .args(z.object({ actorId: Id, recipientId: Id }))
+  .args(z.object({ actorId: Id, recipientId: Id.optional() }))
   .returns(z.promise(z.object({
     count: z.number().int(),
   })));
@@ -40,7 +41,7 @@ export const MarkNotificationRead = z.function()
 export const MarkAllNotificationsRead = z.function()
   .args(z.object({
     actorId: Id,
-    recipientId: Id,
+    recipientId: Id.optional(),
     projectId: Id.optional(),
   }))
   .returns(z.promise(z.object({

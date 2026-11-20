@@ -99,3 +99,17 @@ describe("login uniqueness", () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });
+
+describe("own inbox by default", () => {
+  it("lists, counts and clears the caller's own notifications when recipientId is omitted", async () => {
+    const w = await world();
+    await w.comments.createComment({ actorId: w.alice.id, issueId: w.issue.id, body: "hi @bob" });
+    const own = await w.notifications.listNotifications({ actorId: w.bob.id, pagination: { limit: 10 } });
+    expect(own.items.length).toBe(1);
+    expect((await w.notifications.getUnreadNotificationCount({ actorId: w.bob.id })).count).toBe(1);
+    expect((await w.notifications.markAllNotificationsRead({ actorId: w.bob.id })).markedCount).toBe(1);
+    expect((await w.notifications.getUnreadNotificationCount({ actorId: w.bob.id })).count).toBe(0);
+    // Someone with nothing addressed to them sees nothing, not bob's inbox.
+    expect((await w.notifications.listNotifications({ actorId: w.carol.id, pagination: { limit: 10 } })).items).toEqual([]);
+  });
+});
