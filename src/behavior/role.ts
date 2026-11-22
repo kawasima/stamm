@@ -21,7 +21,7 @@ export const CreateRole = z.function()
 
 /** Get a role by ID */
 export const GetRole = z.function()
-  .args(z.object({ roleId: Id }))
+  .args(z.object({ actorId: Id, roleId: Id }))
   .returns(z.promise(Role));
 
 /** Update a role */
@@ -43,5 +43,5 @@ export const DeleteRole = z.function()
 
 /** List all roles */
 export const ListRoles = z.function()
-  .args(z.object({ pagination: PaginationParams }))
+  .args(z.object({ actorId: Id, pagination: PaginationParams }))
   .returns(z.promise(PaginatedResult(Role)));

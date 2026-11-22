@@ -4,7 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertGlobalAdmin } from "../permissions.js";
+import { assertCanReadProject, assertGlobalAdmin } from "../permissions.js";
 import { inTransaction } from "../tx.js";
 
 type WorkflowConfigMethods =
@@ -19,7 +19,8 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
   const dssCodec = makeCodec(DefaultStatusSetting);
 
   return {
-    listWorkflowTransitions: async ({ projectId, issueTypeId, fromStatusId }) => {
+    listWorkflowTransitions: async ({ actorId, projectId, issueTypeId, fromStatusId }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       let q = db.selectFrom("workflow_transitions").selectAll().where("project_id", "=", projectId);
       if (issueTypeId) q = q.where("issue_type_id", "=", issueTypeId);
       if (fromStatusId) q = q.where("from_status_id", "=", fromStatusId);
@@ -52,7 +53,8 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
       return { transitions: created };
     },
 
-    getDefaultStatus: async ({ projectId, issueTypeId }) => {
+    getDefaultStatus: async ({ actorId, projectId, issueTypeId }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const row = await db
         .selectFrom("default_status_settings")
         .selectAll()

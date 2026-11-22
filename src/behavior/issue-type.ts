@@ -22,7 +22,7 @@ export const CreateIssueType = z.function()
 
 /** Get an issue type by ID */
 export const GetIssueType = z.function()
-  .args(z.object({ issueTypeId: Id }))
+  .args(z.object({ actorId: Id, issueTypeId: Id }))
   .returns(z.promise(IssueType));
 
 /** Update an issue type */
@@ -46,5 +46,5 @@ export const DeleteIssueType = z.function()
 
 /** List all issue types */
 export const ListIssueTypes = z.function()
-  .args(z.object({ pagination: PaginationParams }))
+  .args(z.object({ actorId: Id, pagination: PaginationParams }))
   .returns(z.promise(PaginatedResult(IssueType)));

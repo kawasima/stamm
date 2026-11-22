@@ -1,7 +1,7 @@
 import { UserCategory, GroupMembership, User } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { ConflictError, NotFoundError } from "../errors.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertGlobalAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
@@ -14,6 +14,11 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
   const membershipCodec = makeCodec(GroupMembership);
   const userCodec = makeCodec(User);
 
+  /** Groups and account states span projects, so a project-limited key can't read them. */
+  const assertWorkspaceReader = (): void => {
+    if (ctx.scope?.projectIds) throw new ForbiddenError("Not readable with a project-limited key");
+  };
+
   return {
     setUserStatus: async ({ actorId, userId, status }) => {
       await assertGlobalAdmin(ctx, actorId);
@@ -25,6 +30,7 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
     },
 
     getUserStatus: async ({ userId }) => {
+      assertWorkspaceReader();
       const row = await db.selectFrom("user_statuses").selectAll().where("user_id", "=", userId).executeTakeFirst();
       if (!row) throw new NotFoundError("UserStatus", userId);
       return statusCodec.decode(row);
@@ -46,6 +52,7 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
     },
 
     listGroupMembers: async ({ actorId, groupId, pagination }) => {
+      assertWorkspaceReader();
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db
@@ -57,7 +64,7 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
       const rows = await q.orderBy("u.id").limit(limit + 1).execute();
       // Members carry email PII; drop it for any reader who is not a global admin
       // (and not themselves), mirroring the user directory read projection.
-      const viewerIsAdmin = actorId !== undefined && (await isGlobalAdmin(ctx, actorId));
+      const viewerIsAdmin = await isGlobalAdmin(ctx, actorId);
       const items = rows.map((r) => projectUser(userCodec.decode(r), actorId, viewerIsAdmin));
       const page = buildPage(items, (u) => u.id, limit);
       return { items: page.items, nextCursor: page.nextCursor };

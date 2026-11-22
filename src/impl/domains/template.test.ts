@@ -31,10 +31,10 @@ describe("issue templates", () => {
       issueTypeId: w.type.id, titlePrefix: "[BUG] ", descriptionTemplate: "## Steps\n",
       defaultPriorityId: w.priority.id, defaultLabelIds: ["l1", "l2"], defaultAssigneeIds: ["u1"],
     });
-    const got = await w.templates.getIssueTemplate({ templateId: t.id });
+    const got = await w.templates.getIssueTemplate({ actorId: w.alice.id, templateId: t.id });
     expect(got).toMatchObject({ name: "Bug report", titlePrefix: "[BUG] ", defaultLabelIds: ["l1", "l2"], defaultAssigneeIds: ["u1"] });
 
-    const list = await w.templates.listIssueTemplates({ projectId: w.proj.id, issueTypeId: w.type.id, pagination: { limit: 20 } });
+    const list = await w.templates.listIssueTemplates({ actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, pagination: { limit: 20 } });
     expect(list.items.map((x) => x.id)).toContain(t.id);
     await w.db.destroy();
   });
@@ -47,14 +47,14 @@ describe("issue templates", () => {
       defaultPriorityId: w.priority.id, defaultLabelIds: ["l1"],
     });
 
-    const prepared = await w.templates.instantiateTemplate({ templateId: t.id, subject: "Login fails" });
+    const prepared = await w.templates.instantiateTemplate({ actorId: w.alice.id, templateId: t.id, subject: "Login fails" });
     expect(prepared).toMatchObject({
       projectId: w.proj.id, issueTypeId: w.type.id, subject: "[BUG] Login fails",
       description: "## Steps\n", priorityId: w.priority.id, labelIds: ["l1"],
     });
 
     // no subject + a titlePrefix yields just the prefix; without either it falls back to the name
-    const noSubject = await w.templates.instantiateTemplate({ templateId: t.id });
+    const noSubject = await w.templates.instantiateTemplate({ actorId: w.alice.id, templateId: t.id });
     expect(noSubject.subject).toBe("[BUG] ");
     await w.db.destroy();
   });
@@ -65,7 +65,7 @@ describe("issue templates", () => {
     const up = await w.templates.updateIssueTemplate({ actorId: w.alice.id, templateId: t.id, name: "T2", defaultLabelIds: ["a"] });
     expect(up).toMatchObject({ name: "T2", defaultLabelIds: ["a"] });
     await w.templates.deleteIssueTemplate({ actorId: w.alice.id, templateId: t.id });
-    await expect(w.templates.getIssueTemplate({ templateId: t.id })).rejects.toThrow();
+    await expect(w.templates.getIssueTemplate({ actorId: w.alice.id, templateId: t.id })).rejects.toThrow();
     await w.db.destroy();
   });
 

@@ -154,7 +154,7 @@ const call = async (name, args = {}) => {
 };
 
 // The stdio transport pins you to the seeded member, so calls carry no actorId.
-// Reads stay open to members — resolve the seeded ids needed to file an issue.
+// Members can read configuration — resolve the seeded ids needed to file an issue.
 const project = await call("project_get_by_identifier", { identifier: "default" });
 const page = { pagination: { limit: 20 } };
 const types = await call("admin_list", { params: { resource: "issue_type", ...page } });
@@ -256,8 +256,10 @@ limits it to read tools, and `{ "projectIds": ["<id>", ...] }` confines it to th
 projects. A scope only narrows the user's own rights. A read-only key can never write,
 even for an admin user; a project-limited key never acts as a global admin, sees nothing
 outside its projects, and may use only the audited tools listed in
-`src/mcp/scope.ts` (the others are not even listed). Scopes apply to HTTP keys only; the
-stdio transport is trusted and unscoped.
+`src/mcp/scope.ts` (the others are not even listed). With `admin_list` / `admin_get` such a
+key reads the shared vocabulary (statuses, priorities, issue types), its projects' labels,
+categories and custom fields, and the users who are members of its projects. The stdio
+transport takes the same scope from `STAMM_SCOPE` and is unscoped without it.
 
 Sign a request token from an issued private JWK (using [jose](https://github.com/panva/jose)):
 

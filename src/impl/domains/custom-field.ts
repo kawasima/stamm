@@ -11,7 +11,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError, ValidationError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
-import { assertGlobalAdmin } from "../permissions.js";
+import { assertCanReadProject, assertGlobalAdmin, canReadProject, isGlobalAdmin } from "../permissions.js";
 
 const codecOpts = {
   json: ["possibleValues", "constraints", "scope"],
@@ -138,7 +138,7 @@ export async function validateCustomFields(
       const known = allById.get(v.fieldId);
       throw new ValidationError(
         known
-          ? `Custom field "${known.name}" is not in scope for this project / issue type`
+          ? `Custom field ${known.id} is not in scope for this project / issue type`
           : `Unknown custom field: ${v.fieldId}`,
       );
     }
@@ -156,6 +156,28 @@ type CustomFieldMethods =
 export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMethods> {
   const db = ctx.db as unknown as Kysely<any>;
 
+  /**
+   * A definition as `actorId` may see it, or undefined. One that applies to every
+   * project is workspace vocabulary. One limited to certain projects is visible
+   * to whoever can read one of them, and names only those: the rest of the list
+   * would disclose projects the actor can't see.
+   */
+  const viewer = async (actorId: string) => {
+    const admin = await isGlobalAdmin(ctx, actorId);
+    const readable = new Map<string, boolean>();
+    return async (def: CustomFieldDefinitionT): Promise<CustomFieldDefinitionT | undefined> => {
+      const ids = def.scope.projectIds;
+      if (admin || !ids || ids.length === 0) return def;
+      const shown: string[] = [];
+      for (const id of ids) {
+        let ok = readable.get(id);
+        if (ok === undefined) readable.set(id, (ok = await canReadProject(ctx, id, actorId)));
+        if (ok) shown.push(id);
+      }
+      return shown.length > 0 ? { ...def, scope: { ...def.scope, projectIds: shown } } : undefined;
+    };
+  };
+
   return {
     createCustomFieldDefinition: async (args) => {
       await assertGlobalAdmin(ctx, args.actorId);
@@ -165,10 +187,11 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
       return def;
     },
 
-    getCustomFieldDefinition: async ({ fieldId }) => {
+    getCustomFieldDefinition: async ({ actorId, fieldId }) => {
       const row = await db.selectFrom(TABLE).selectAll().where("id", "=", fieldId).executeTakeFirst();
-      if (!row) throw new NotFoundError("CustomFieldDefinition", fieldId);
-      return defCodec.decode(row);
+      const def = row && (await (await viewer(actorId))(defCodec.decode(row)));
+      if (!def) throw new NotFoundError("CustomFieldDefinition", fieldId);
+      return def;
     },
 
     updateCustomFieldDefinition: async (args) => {
@@ -198,7 +221,10 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
     },
 
     listCustomFieldDefinitions: async (args) => {
-      let defs = (await loadDefs(db)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      if (args.projectId) await assertCanReadProject(ctx, args.projectId, args.actorId);
+      const see = await viewer(args.actorId);
+      const seen = await Promise.all((await loadDefs(db)).map(see));
+      let defs = seen.filter((d) => d !== undefined).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       if (args.fieldType) defs = defs.filter((d) => d.fieldType === args.fieldType);
       if (typeof args.projectId === "string") defs = defs.filter((d) => inScope(d.scope.projectIds, args.projectId as string));
       if (typeof args.issueTypeId === "string") defs = defs.filter((d) => inScope(d.scope.issueTypeIds, args.issueTypeId as string));

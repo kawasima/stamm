@@ -27,7 +27,7 @@ export const CreateIssueTemplate = z.function()
 
 /** Get an issue template by ID */
 export const GetIssueTemplate = z.function()
-  .args(z.object({ templateId: Id }))
+  .args(z.object({ actorId: Id, templateId: Id }))
   .returns(z.promise(IssueTemplate));
 
 /** Update an issue template */
@@ -55,6 +55,7 @@ export const DeleteIssueTemplate = z.function()
 /** List issue templates in a project */
 export const ListIssueTemplates = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueTypeId: Id.optional(),
     pagination: PaginationParams,
@@ -68,6 +69,7 @@ export const ListIssueTemplates = z.function()
  */
 export const InstantiateTemplate = z.function()
   .args(z.object({
+    actorId: Id,
     templateId: Id,
     subject: z.string().min(1).max(500).optional(),
   }))

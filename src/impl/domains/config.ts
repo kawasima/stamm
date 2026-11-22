@@ -12,10 +12,10 @@ import {
 } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { ConflictError, NotFoundError } from "../errors.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
-import { assertGlobalAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
+import { assertCanReadProject, assertGlobalAdmin, canReadProject, isGlobalAdmin, projectUser } from "../permissions.js";
 
 interface Paginated<T> {
   items: T[];
@@ -32,13 +32,20 @@ interface CrudDef<S extends z.ZodTypeAny> {
   entityName: string;
   /** Domain fields stored as JSON text. */
   json?: string[];
-  /** Whether the table has a project_id column (enables a projectId list filter). */
+  /**
+   * The rows belong to a project: reads require that project to be readable, and
+   * list is always within one project. Without this, a resource is workspace
+   * vocabulary (statuses, priorities, issue types) that any actor may read.
+   */
   projectScoped?: boolean;
+  /** Not readable with a project-limited key: the rows say who holds what across projects. */
+  workspaceOnly?: boolean;
+  /** Narrow which rows a reader sees. Applied to get and list alike. */
+  readFilter?: (ctx: Ctx, args: Record<string, unknown>) => ((q: ConfigQuery) => ConfigQuery) | undefined;
   /**
    * Authorize a write (create/update/delete). Defaults to global-admin-only:
    * config resources (statuses, roles, users, …) are administration, so a
-   * non-admin actor must be rejected before any row is touched. Reads (get/list)
-   * stay open so members can resolve statuses/labels/roles for normal work.
+   * non-admin actor must be rejected before any row is touched.
    */
   writeGuard?: (ctx: Ctx, args: Record<string, unknown>) => Promise<void>;
   /**
@@ -49,6 +56,9 @@ interface CrudDef<S extends z.ZodTypeAny> {
    */
   readProjection?: (ctx: Ctx, args: Record<string, unknown>) => Promise<(row: z.infer<S>) => z.infer<S>>;
 }
+
+// Dynamic table names defeat Kysely's typing here; see makeCrud.
+type ConfigQuery = any;
 
 /**
  * Generic CRUD for a config resource. The eight config tables are structurally
@@ -71,10 +81,22 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
     return entity;
   };
 
+  const guardRead = (): void => {
+    if (def.workspaceOnly && ctx.scope?.projectIds) {
+      throw new ForbiddenError(`${def.entityName} is not readable with a project-limited key`);
+    }
+  };
+
   const get = async (args: Record<string, unknown>): Promise<R> => {
+    guardRead();
     const id = args[def.idArg] as string;
-    const row = await db.selectFrom(def.table).selectAll().where("id", "=", id).executeTakeFirst();
+    const narrow = def.readFilter?.(ctx, args);
+    const query = db.selectFrom(def.table).selectAll().where("id", "=", id);
+    const row = await (narrow ? (narrow(query) as typeof query) : query).executeTakeFirst();
     if (!row) throw new NotFoundError(def.entityName, id);
+    if (def.projectScoped && !(await canReadProject(ctx, row.project_id as string, args.actorId as string))) {
+      throw new NotFoundError(def.entityName, id);
+    }
     const entity = codec.decode(row);
     if (def.readProjection) return (await def.readProjection(ctx, args))(entity);
     return entity;
@@ -103,13 +125,15 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   };
 
   const list = async (args: Record<string, unknown>): Promise<Paginated<R>> => {
+    guardRead();
+    if (def.projectScoped) await assertCanReadProject(ctx, args.projectId as string, args.actorId as string);
     const pagination = (args.pagination ?? {}) as { cursor?: string; limit?: number };
     const limit = pagination.limit ?? 20;
     const cursor = decodeCursor(pagination.cursor);
     let q = db.selectFrom(def.table).selectAll();
-    if (def.projectScoped && typeof args.projectId === "string") {
-      q = q.where("project_id", "=", args.projectId);
-    }
+    if (def.projectScoped) q = q.where("project_id", "=", args.projectId as string);
+    const narrow = def.readFilter?.(ctx, args);
+    if (narrow) q = narrow(q) as typeof q;
     if (cursor) q = q.where("id", ">", cursor);
     const rows = await q.orderBy("id").limit(limit + 1).execute();
     let items = rows.map((r) => codec.decode(r));
@@ -140,7 +164,7 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
   const label = makeCrud(ctx, { table: "labels", schema: Label, idArg: "labelId", entityName: "Label", projectScoped: true });
   const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType" });
   const category = makeCrud(ctx, { table: "categories", schema: Category, idArg: "categoryId", entityName: "Category", projectScoped: true });
-  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"] });
+  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true });
   // Users are global-admin-only to write, EXCEPT the very first user on an empty
   // database: someone has to mint the bootstrap admin before any admin exists.
   // Once any user exists this falls back to the admin check, so it can't be used
@@ -159,7 +183,20 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
     const viewerIsAdmin = viewerId !== undefined && (await isGlobalAdmin(c, viewerId));
     return (u: z.infer<typeof User>) => projectUser(u, viewerId, viewerIsAdmin) as z.infer<typeof User>;
   };
-  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection });
+  // A project-limited key sees the people it can work with: members of its
+  // projects, and its own user.
+  const userReadFilter = (c: Ctx, args: Record<string, unknown>) => {
+    const ids = c.scope?.projectIds;
+    if (!ids) return undefined;
+    return (q: ConfigQuery) =>
+      q.where((eb: any) =>
+        eb.or([
+          eb("users.id", "=", args.actorId as string),
+          eb("users.id", "in", eb.selectFrom("project_memberships").select("user_id").where("project_id", "in", ids)),
+        ]),
+      );
+  };
+  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection, readFilter: userReadFilter });
   // A login names exactly one user (mentions rely on it). Checked here so the
   // caller gets a ConflictError instead of a raw unique-index failure.
   const assertLoginFree = async (login: unknown): Promise<void> => {
@@ -171,7 +208,7 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
       .executeTakeFirst();
     if (row) throw new ConflictError(`Login "${login}" is already taken`);
   };
-  const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup" });
+  const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup", workspaceOnly: true });
 
   return {
     createStatus: status.create, getStatus: status.get, updateStatus: status.update, deleteStatus: status.remove, listStatuses: status.list,

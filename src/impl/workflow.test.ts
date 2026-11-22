@@ -56,12 +56,12 @@ describe("workflow transitions", () => {
       issueTypeId: type.id,
       transitions: [{ fromStatusId: todo.id, toStatusId: doing.id, roleIds: ["dev"] }],
     });
-    const first = await wf.listWorkflowTransitions({ projectId: "p1", issueTypeId: type.id });
+    const first = await wf.listWorkflowTransitions({ actorId: "u1", projectId: "p1", issueTypeId: type.id });
     expect(first.transitions).toHaveLength(1);
 
     // replace with a different set
     await wf.setWorkflowTransitions({ actorId: "u1", projectId: "p1", issueTypeId: type.id, transitions: [] });
-    const second = await wf.listWorkflowTransitions({ projectId: "p1", issueTypeId: type.id });
+    const second = await wf.listWorkflowTransitions({ actorId: "u1", projectId: "p1", issueTypeId: type.id });
     expect(second.transitions).toHaveLength(0);
     await db.destroy();
   });

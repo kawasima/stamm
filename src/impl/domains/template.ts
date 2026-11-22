@@ -4,7 +4,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite } from "../permissions.js";
+import { assertCanReadProject, assertCanWrite, canReadProject } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type TemplateMethods =
@@ -15,7 +15,7 @@ const JSON_FIELDS = ["defaultLabelIds", "defaultAssigneeIds", "defaultCustomFiel
 
 /**
  * Issue templates pre-fill a new issue. Writes require `template.manage`; reads
- * are open. {@link instantiateTemplate} is a pure transform — it returns prepared
+ * require the project to be readable. {@link instantiateTemplate} is a pure transform — it returns prepared
  * CreateIssue arguments and persists nothing, so the caller drives the actual
  * issue creation (and its permission check).
  */
@@ -29,6 +29,13 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
     return codec.decode(row);
   };
 
+  /** Load for a reader: a template of an unreadable project is absent, not forbidden. */
+  const loadFor = async (actorId: string, id: string): Promise<IssueTemplateT> => {
+    const template = await load(id);
+    if (!(await canReadProject(ctx, template.projectId, actorId))) throw new NotFoundError("IssueTemplate", id);
+    return template;
+  };
+
   return {
     createIssueTemplate: async (args) => {
       await assertCanWrite(ctx, args.projectId, args.actorId, "template.manage");
@@ -38,7 +45,7 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
       return template;
     },
 
-    getIssueTemplate: async ({ templateId }) => load(templateId),
+    getIssueTemplate: async ({ actorId, templateId }) => loadFor(actorId, templateId),
 
     updateIssueTemplate: async (args) => {
       const template = await load(args.templateId);
@@ -58,7 +65,8 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
       await db.deleteFrom("issue_templates").where("id", "=", templateId).execute();
     },
 
-    listIssueTemplates: async ({ projectId, issueTypeId, pagination }) => {
+    listIssueTemplates: async ({ actorId, projectId, issueTypeId, pagination }) => {
+      await assertCanReadProject(ctx, projectId, actorId);
       const limit = pagination?.limit ?? 20;
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_templates").selectAll().where("project_id", "=", projectId);
@@ -69,8 +77,8 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
       return { items: page.items, nextCursor: page.nextCursor };
     },
 
-    instantiateTemplate: async ({ templateId, subject }) => {
-      const t = await load(templateId);
+    instantiateTemplate: async ({ actorId, templateId, subject }) => {
+      const t = await loadFor(actorId, templateId);
       // titlePrefix is a prefix to the caller's subject; fall back to the template
       // name so the result is never an empty subject.
       const finalSubject = t.titlePrefix ? `${t.titlePrefix}${subject ?? ""}` : (subject ?? t.name);

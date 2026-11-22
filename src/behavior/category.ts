@@ -20,7 +20,7 @@ export const CreateCategory = z.function()
 
 /** Get a category by ID */
 export const GetCategory = z.function()
-  .args(z.object({ categoryId: Id }))
+  .args(z.object({ actorId: Id, categoryId: Id }))
   .returns(z.promise(Category));
 
 /** Update a category */
@@ -40,6 +40,7 @@ export const DeleteCategory = z.function()
 /** List categories in a project */
 export const ListCategories = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     pagination: PaginationParams,
   }))

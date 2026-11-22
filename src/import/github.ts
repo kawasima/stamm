@@ -66,6 +66,8 @@ export interface ImportReport {
   unmappedAssignees: Record<string, number>;
 }
 
+/** Reads the user list before an admin is known; grants nothing. */
+const SYSTEM = "system";
 const FIELD_NAME = "GitHub URL";
 const IMPORT_LOGIN = "github-import";
 const NOT_PLANNED = { name: "not planned", color: "ededed", description: "Closed on GitHub as not planned" };
@@ -121,7 +123,7 @@ export async function importGitHub(
   }
 
   // --- Who and what we write with ---
-  const users = await all((pagination) => b.listUsers({ pagination }));
+  const users = await all((pagination) => b.listUsers({ actorId: SYSTEM, pagination }));
   const userByLogin = new Map(users.map((u) => [u.login.toLowerCase(), u]));
   const admin = users.find((u) => u.kind === "admin");
   if (!admin) throw new Error("No admin user: the import needs one to set the project up");
@@ -132,19 +134,19 @@ export async function importGitHub(
     mapped.set(gh, user.id);
   }
   const roleName = opts.roleName ?? "Member";
-  const role = (await all((pagination) => b.listRoles({ pagination }))).find((r) => r.name === roleName);
+  const role = (await all((pagination) => b.listRoles({ actorId: admin.id, pagination }))).find((r) => r.name === roleName);
   if (!role) throw new Error(`No role named "${roleName}"`);
-  const statuses = (await all((pagination) => b.listStatuses({ pagination }))).sort((x, y) => x.sortOrder - y.sortOrder);
+  const statuses = (await all((pagination) => b.listStatuses({ actorId: admin.id, pagination }))).sort((x, y) => x.sortOrder - y.sortOrder);
   const todo = statuses.find((s) => s.category === "todo");
   const done = statuses.find((s) => s.category === "done");
-  const issueType = (await all((pagination) => b.listIssueTypes({ pagination })))[0];
-  const priority = (await all((pagination) => b.listPriorities({ pagination })))[0];
+  const issueType = (await all((pagination) => b.listIssueTypes({ actorId: admin.id, pagination })))[0];
+  const priority = (await all((pagination) => b.listPriorities({ actorId: admin.id, pagination })))[0];
   if (!todo || !done || !issueType || !priority) throw new Error("Need a todo status, a done status, an issue type and a priority");
   const isDone = new Set(statuses.filter((s) => s.category === "done").map((s) => s.id));
 
   let project = await b.getProjectByIdentifier({ actorId: admin.id, identifier: opts.project });
   const fields = project
-    ? await all((pagination) => b.listCustomFieldDefinitions({ projectId: project!.id, pagination }))
+    ? await all((pagination) => b.listCustomFieldDefinitions({ actorId: admin.id, projectId: project!.id, pagination }))
     : [];
   let field = fields.find((f) => f.name === FIELD_NAME && f.scope.projectIds?.includes(project!.id));
   if (project && !field) {
@@ -185,7 +187,7 @@ export async function importGitHub(
 
   if (opts.dryRun) {
     report.created = issues.length - report.existing;
-    const haveLabels = project ? await all((pagination) => b.listLabels({ projectId: project!.id, pagination })) : [];
+    const haveLabels = project ? await all((pagination) => b.listLabels({ actorId: admin.id, projectId: project!.id, pagination })) : [];
     report.labelsCreated = [...wantedLabels.keys()].filter((n) => !haveLabels.some((l) => l.name === n)).length;
     for (const i of issues) if (!existing.has(i.html_url)) report.commentsCreated += (commentsOf.get(i.number) ?? []).length;
     report.milestonesCreated = project ? 0 : wantedMilestones.size;
@@ -214,7 +216,7 @@ export async function importGitHub(
     if (!members.has(userId)) await b.addProjectMember({ actorId: admin.id, projectId, userId, roleIds: [role.id] });
   }
 
-  const labelId = new Map((await all((pagination) => b.listLabels({ projectId, pagination }))).map((l) => [l.name, l.id]));
+  const labelId = new Map((await all((pagination) => b.listLabels({ actorId: admin.id, projectId, pagination }))).map((l) => [l.name, l.id]));
   for (const l of wantedLabels.values()) {
     if (labelId.has(l.name)) continue;
     const made = await b.createLabel({ actorId: admin.id, projectId, name: l.name, color: labelColor(l.color), ...(l.description ? { description: l.description } : {}) });

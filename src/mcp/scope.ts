@@ -8,7 +8,8 @@ import type { KeyScope } from "../schema/index.js";
  * until someone has audited it.
  *
  * Left out deliberately: attachments (non-issue targets skip the read check),
- * templates and workflow reads (no project check), issue_move (crosses projects), and every global/admin tool.
+ * issue_move (crosses projects), and every global/admin write. Of the admin_*
+ * tools, only reads of {@link PROJECT_SCOPED_RESOURCES} are open.
  */
 export const PROJECT_SCOPED_TOOLS: ReadonlySet<string> = new Set([
   "issue_get", "issue_get_detail", "issue_get_by_key", "issue_search", "issue_children",
@@ -22,6 +23,7 @@ export const PROJECT_SCOPED_TOOLS: ReadonlySet<string> = new Set([
   "iteration_get", "iteration_list", "iteration_progress",
   "time_get", "time_list", "time_summary", "time_log", "time_update", "time_delete",
   "activity_list", "activity_get",
+  "workflow_list", "status_default_get", "template_get", "template_list", "template_instantiate",
   // A notification inbox is the key user's own and is filtered by the key's projects.
   "notification_list", "notification_unread_count", "notification_read", "notification_read_all",
 ]);
@@ -32,4 +34,20 @@ export function toolAllowed(scope: KeyScope | undefined, name: string, readOnly:
   if (scope.readOnly && !readOnly) return false;
   if (scope.projectIds && !PROJECT_SCOPED_TOOLS.has(name)) return false;
   return true;
+}
+
+/**
+ * Config resources a project-limited key may read: the shared vocabulary an issue
+ * is written in, and rows the permission layer narrows to the key's projects.
+ * Roles and groups are left out because they describe people across projects.
+ */
+const PROJECT_SCOPED_RESOURCES: ReadonlySet<string> = new Set([
+  "status", "priority", "issue_type", "label", "category", "custom_field", "user",
+]);
+
+/** The resources an admin_* tool may serve under `scope`; none means the tool is not offered. */
+export function allowedResources(scope: KeyScope | undefined, readOnly: boolean, resources: string[]): string[] {
+  if (!scope) return resources;
+  if ((scope.readOnly || scope.projectIds) && !readOnly) return [];
+  return scope.projectIds ? resources.filter((r) => PROJECT_SCOPED_RESOURCES.has(r)) : resources;
 }

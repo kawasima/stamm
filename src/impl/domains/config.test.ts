@@ -22,7 +22,7 @@ describe("config domain — status CRUD via the generic helper", () => {
     const created = await b.createStatus({ actorId: "u1", name: "Todo", category: "todo" });
     expect(created).toMatchObject({ id: "id-1", name: "Todo", category: "todo", sortOrder: 0 });
 
-    const got = await b.getStatus({ statusId: "id-1" });
+    const got = await b.getStatus({ actorId: "u1", statusId: "id-1" });
     expect(got).toEqual(created);
     await db.destroy();
   });
@@ -39,7 +39,7 @@ describe("config domain — status CRUD via the generic helper", () => {
     const { db, b } = await setup();
     await b.createStatus({ actorId: "u1", name: "Todo", category: "todo" });
     await b.deleteStatus({ actorId: "u1", statusId: "id-1" });
-    await expect(b.getStatus({ statusId: "id-1" })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(b.getStatus({ actorId: "u1", statusId: "id-1" })).rejects.toBeInstanceOf(NotFoundError);
     await db.destroy();
   });
 
@@ -49,11 +49,11 @@ describe("config domain — status CRUD via the generic helper", () => {
     await b.createStatus({ actorId: "u1", name: "B", category: "in_progress" });
     await b.createStatus({ actorId: "u1", name: "C", category: "done" });
 
-    const first = await b.listStatuses({ pagination: { limit: 2 } });
+    const first = await b.listStatuses({ actorId: "u1", pagination: { limit: 2 } });
     expect(first.items.map((s) => s.name)).toEqual(["A", "B"]);
     expect(first.nextCursor).toBeDefined();
 
-    const second = await b.listStatuses({ pagination: { limit: 2, cursor: first.nextCursor } });
+    const second = await b.listStatuses({ actorId: "u1", pagination: { limit: 2, cursor: first.nextCursor } });
     expect(second.items.map((s) => s.name)).toEqual(["C"]);
     expect(second.nextCursor).toBeUndefined();
     await db.destroy();
@@ -69,7 +69,7 @@ describe("config domain — other resources via the same helper", () => {
       permissions: ["issue.create", "issue.update"],
     });
     expect(role).toMatchObject({ id: "id-1", permissions: ["issue.create", "issue.update"], issuesVisibility: "all" });
-    expect(await b.getRole({ roleId: "id-1" })).toEqual(role);
+    expect(await b.getRole({ actorId: "u1", roleId: "id-1" })).toEqual(role);
     await db.destroy();
   });
 
@@ -85,7 +85,7 @@ describe("config domain — other resources via the same helper", () => {
     await b.createLabel({ actorId: "u1", projectId: "p1", name: "bug", color: "#ff0000" });
     await b.createLabel({ actorId: "u1", projectId: "p2", name: "chore", color: "#00ff00" });
 
-    const p1 = await b.listLabels({ projectId: "p1", pagination: { limit: 20 } });
+    const p1 = await b.listLabels({ actorId: "u1", projectId: "p1", pagination: { limit: 20 } });
     expect(p1.items.map((l) => l.name)).toEqual(["bug"]);
     await db.destroy();
   });

@@ -31,7 +31,7 @@ async function main(): Promise<void> {
 
   let actorId = process.env.STAMM_ACTOR;
   if (!actorId) {
-    actorId = seed?.memberId ?? (await behaviors.listUsers({ pagination: { limit: 1 } })).items[0]?.id;
+    actorId = seed?.memberId ?? (await behaviors.listUsers({ actorId: "system", pagination: { limit: 1 } })).items[0]?.id;
   }
   if (!actorId) {
     console.error("[stamm] no actor available; set STAMM_ACTOR to a user id");

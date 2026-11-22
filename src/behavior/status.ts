@@ -26,7 +26,7 @@ export const CreateStatus = z.function()
 
 /** Get a status by ID */
 export const GetStatus = z.function()
-  .args(z.object({ statusId: Id }))
+  .args(z.object({ actorId: Id, statusId: Id }))
   .returns(z.promise(Status));
 
 /** Update a status */
@@ -50,6 +50,7 @@ export const DeleteStatus = z.function()
 /** List all statuses */
 export const ListStatuses = z.function()
   .args(z.object({
+    actorId: Id,
     category: StatusCategory.optional(),
     pagination: PaginationParams,
   }))
@@ -79,6 +80,7 @@ export const DeleteWorkflowTransition = z.function()
 /** List workflow transitions for a project and issue type */
 export const ListWorkflowTransitions = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueTypeId: Id.optional(),
     fromStatusId: Id.optional(),
@@ -120,6 +122,7 @@ export const SetDefaultStatus = z.function()
 /** Get the default status for a project + issue type */
 export const GetDefaultStatus = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     issueTypeId: Id,
   }))

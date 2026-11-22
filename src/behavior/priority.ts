@@ -19,7 +19,7 @@ export const CreatePriority = z.function()
 
 /** Get a priority by ID */
 export const GetPriority = z.function()
-  .args(z.object({ priorityId: Id }))
+  .args(z.object({ actorId: Id, priorityId: Id }))
   .returns(z.promise(Priority));
 
 /** Update a priority */
@@ -40,5 +40,5 @@ export const DeletePriority = z.function()
 
 /** List all priorities */
 export const ListPriorities = z.function()
-  .args(z.object({ pagination: PaginationParams }))
+  .args(z.object({ actorId: Id, pagination: PaginationParams }))
   .returns(z.promise(PaginatedResult(Priority)));

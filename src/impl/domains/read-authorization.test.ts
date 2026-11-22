@@ -261,7 +261,7 @@ describe("read authorization — the user directory does not leak email/admin PI
 
   it("strips email when no viewer identifies itself (least privilege)", async () => {
     const w = await userDirectoryWorld();
-    const list = await w.config.listUsers({ pagination: { limit: 50 } });
+    const list = await w.config.listUsers({ actorId: "nobody", pagination: { limit: 50 } });
     expect(list.items.every((u) => u.email === undefined)).toBe(true);
     await w.db.destroy();
   });

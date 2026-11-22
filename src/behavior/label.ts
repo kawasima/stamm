@@ -20,7 +20,7 @@ export const CreateLabel = z.function()
 
 /** Get a label by ID */
 export const GetLabel = z.function()
-  .args(z.object({ labelId: Id }))
+  .args(z.object({ actorId: Id, labelId: Id }))
   .returns(z.promise(Label));
 
 /** Update a label */
@@ -42,6 +42,7 @@ export const DeleteLabel = z.function()
 /** List labels in a project */
 export const ListLabels = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id,
     query: z.string().optional(),
     pagination: PaginationParams,

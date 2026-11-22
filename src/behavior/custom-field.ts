@@ -32,7 +32,7 @@ export const CreateCustomFieldDefinition = z.function()
 
 /** Get a custom field definition by ID */
 export const GetCustomFieldDefinition = z.function()
-  .args(z.object({ fieldId: Id }))
+  .args(z.object({ actorId: Id, fieldId: Id }))
   .returns(z.promise(CustomFieldDefinition));
 
 /** Update a custom field definition */
@@ -61,6 +61,7 @@ export const DeleteCustomFieldDefinition = z.function()
 /** List custom field definitions with optional scope filtering */
 export const ListCustomFieldDefinitions = z.function()
   .args(z.object({
+    actorId: Id,
     projectId: Id.optional(),
     issueTypeId: Id.optional(),
     fieldType: CustomFieldType.optional(),

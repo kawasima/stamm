@@ -35,7 +35,7 @@ const MEMBER_PERMISSIONS = [
  * place to hand the private keys to.
  */
 export async function ensureBootstrapped(b: Behaviors): Promise<BootstrapResult | null> {
-  const existing = await b.listUsers({ pagination: { limit: 1 } });
+  const existing = await b.listUsers({ actorId: "system", pagination: { limit: 1 } });
   if (existing.items.length > 0) return null;
 
   const admin = await b.createUser({ actorId: "system", login: "admin", email: "admin@stamm.local", displayName: "Admin", kind: "admin" });

@@ -5,6 +5,8 @@ import * as B from "../behavior/index.js";
 import type { Behaviors } from "./behaviors.js";
 import { contractArgsObject, type AnyContract } from "./contract.js";
 import { injectActor } from "./identity.js";
+import { allowedResources } from "./scope.js";
+import type { KeyScope } from "../schema/index.js";
 
 type ResourceEntry = { contract: AnyContract; behavior: keyof Behaviors };
 type ResourceMap = Record<string, ResourceEntry>;
@@ -15,7 +17,7 @@ type ResourceMap = Record<string, ResourceEntry>;
  * `resource`, so every resource keeps its own typed fields in the published
  * schema rather than hiding behind a loose object.
  */
-const CREATE: ResourceMap = {
+export const CREATE: ResourceMap = {
   status: { contract: B.CreateStatus, behavior: "createStatus" },
   priority: { contract: B.CreatePriority, behavior: "createPriority" },
   label: { contract: B.CreateLabel, behavior: "createLabel" },
@@ -27,7 +29,7 @@ const CREATE: ResourceMap = {
   custom_field: { contract: B.CreateCustomFieldDefinition, behavior: "createCustomFieldDefinition" },
 };
 
-const GET: ResourceMap = {
+export const GET: ResourceMap = {
   status: { contract: B.GetStatus, behavior: "getStatus" },
   priority: { contract: B.GetPriority, behavior: "getPriority" },
   label: { contract: B.GetLabel, behavior: "getLabel" },
@@ -39,7 +41,7 @@ const GET: ResourceMap = {
   custom_field: { contract: B.GetCustomFieldDefinition, behavior: "getCustomFieldDefinition" },
 };
 
-const UPDATE: ResourceMap = {
+export const UPDATE: ResourceMap = {
   status: { contract: B.UpdateStatus, behavior: "updateStatus" },
   priority: { contract: B.UpdatePriority, behavior: "updatePriority" },
   label: { contract: B.UpdateLabel, behavior: "updateLabel" },
@@ -51,7 +53,7 @@ const UPDATE: ResourceMap = {
   custom_field: { contract: B.UpdateCustomFieldDefinition, behavior: "updateCustomFieldDefinition" },
 };
 
-const DELETE: ResourceMap = {
+export const DELETE: ResourceMap = {
   status: { contract: B.DeleteStatus, behavior: "deleteStatus" },
   priority: { contract: B.DeletePriority, behavior: "deletePriority" },
   label: { contract: B.DeleteLabel, behavior: "deleteLabel" },
@@ -63,7 +65,7 @@ const DELETE: ResourceMap = {
   custom_field: { contract: B.DeleteCustomFieldDefinition, behavior: "deleteCustomFieldDefinition" },
 };
 
-const LIST: ResourceMap = {
+export const LIST: ResourceMap = {
   status: { contract: B.ListStatuses, behavior: "listStatuses" },
   priority: { contract: B.ListPriorities, behavior: "listPriorities" },
   label: { contract: B.ListLabels, behavior: "listLabels" },
@@ -74,8 +76,6 @@ const LIST: ResourceMap = {
   group: { contract: B.ListUserGroups, behavior: "listUserGroups" },
   custom_field: { contract: B.ListCustomFieldDefinitions, behavior: "listCustomFieldDefinitions" },
 };
-
-const RESOURCE_LIST = "status, priority, label, issue_type, category, role, user, group, custom_field";
 
 function unionSchema(map: ResourceMap, pinnedActor: boolean) {
   const variants = Object.keys(map).map((resource) => {
@@ -92,16 +92,20 @@ function registerAdminOp(
   behaviors: Behaviors,
   op: string,
   description: string,
-  map: ResourceMap,
+  full: ResourceMap,
   actorId: string | undefined,
   annotations: ToolAnnotations | undefined,
-  allow: (name: string, readOnly: boolean) => boolean,
+  scope: KeyScope | undefined,
 ): void {
-  if (!allow(`admin_${op}`, annotations?.readOnlyHint === true)) return;
+  const resources = allowedResources(scope, annotations?.readOnlyHint === true, Object.keys(full));
+  if (resources.length === 0) return;
+  // Resources the key may not touch are absent from the published union, so they
+  // are neither advertised nor accepted.
+  const map = Object.fromEntries(resources.map((r) => [r, full[r]]));
   server.registerTool(
     `admin_${op}`,
     {
-      description,
+      description: description.replace("{resources}", resources.join(", ")),
       // The SDK only publishes the JSON Schema of an object-typed inputSchema,
       // so the resource union lives under a `params` property, not at the root.
       inputSchema: { params: unionSchema(map, !!actorId) },
@@ -122,15 +126,16 @@ function registerAdminOp(
   );
 }
 
+/** The admin_* tools, narrowed to what `scope` permits. */
 export function registerAdminTools(
   server: McpServer,
   behaviors: Behaviors,
   actorId?: string,
-  allow: (name: string, readOnly: boolean) => boolean = () => true,
+  scope?: KeyScope,
 ): void {
-  registerAdminOp(server, behaviors, "create", `Create a config resource (${RESOURCE_LIST}). Set params.resource and that resource's create fields.`, CREATE, actorId, undefined, allow);
-  registerAdminOp(server, behaviors, "get", `Get a config resource by ID (${RESOURCE_LIST}).`, GET, actorId, { readOnlyHint: true }, allow);
-  registerAdminOp(server, behaviors, "update", `Update a config resource (${RESOURCE_LIST}).`, UPDATE, actorId, { idempotentHint: true }, allow);
-  registerAdminOp(server, behaviors, "delete", `Delete a config resource (${RESOURCE_LIST}).`, DELETE, actorId, { destructiveHint: true }, allow);
-  registerAdminOp(server, behaviors, "list", `List a config resource (${RESOURCE_LIST}).`, LIST, actorId, { readOnlyHint: true }, allow);
+  registerAdminOp(server, behaviors, "create", "Create a config resource ({resources}). Set params.resource and that resource's create fields.", CREATE, actorId, undefined, scope);
+  registerAdminOp(server, behaviors, "get", "Get a config resource by ID ({resources}).", GET, actorId, { readOnlyHint: true }, scope);
+  registerAdminOp(server, behaviors, "update", "Update a config resource ({resources}).", UPDATE, actorId, { idempotentHint: true }, scope);
+  registerAdminOp(server, behaviors, "delete", "Delete a config resource ({resources}).", DELETE, actorId, { destructiveHint: true }, scope);
+  registerAdminOp(server, behaviors, "list", "List a config resource ({resources}).", LIST, actorId, { readOnlyHint: true }, scope);
 }

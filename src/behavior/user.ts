@@ -31,7 +31,7 @@ export const CreateUser = z.function()
 /** Get a user by ID. `email` is returned only to a global admin or the user
  *  themselves; pass `actorId` to be recognized. */
 export const GetUser = z.function()
-  .args(z.object({ actorId: Id.optional(), userId: Id }))
+  .args(z.object({ actorId: Id, userId: Id }))
   .returns(z.promise(PublicUser));
 
 /** Get a user by login name */
@@ -61,7 +61,7 @@ export const DeleteUser = z.function()
  *  global admin viewer (pass `actorId`); other callers get the public projection. */
 export const ListUsers = z.function()
   .args(z.object({
-    actorId: Id.optional(),
+    actorId: Id,
     status: UserStatus.optional(),
     kind: UserKind.optional(),
     query: z.string().optional(),
@@ -92,7 +92,7 @@ export const SetUserStatus = z.function()
  * later, but it is not gated on today.
  */
 export const GetUserStatus = z.function()
-  .args(z.object({ actorId: Id.optional(), userId: Id }))
+  .args(z.object({ actorId: Id, userId: Id }))
   .returns(z.promise(UserCategory));
 
 // ============================================================
@@ -110,7 +110,7 @@ export const CreateUserGroup = z.function()
 
 /** Get a user group by ID */
 export const GetUserGroup = z.function()
-  .args(z.object({ groupId: Id }))
+  .args(z.object({ actorId: Id, groupId: Id }))
   .returns(z.promise(UserGroup));
 
 /** Update a user group */
@@ -130,7 +130,7 @@ export const DeleteUserGroup = z.function()
 
 /** List all user groups */
 export const ListUserGroups = z.function()
-  .args(z.object({ pagination: PaginationParams }))
+  .args(z.object({ actorId: Id, pagination: PaginationParams }))
   .returns(z.promise(PaginatedResult(UserGroup)));
 
 // ============================================================
@@ -159,7 +159,7 @@ export const RemoveGroupMember = z.function()
  *  (pass `actorId`); other callers get the public projection. */
 export const ListGroupMembers = z.function()
   .args(z.object({
-    actorId: Id.optional(),
+    actorId: Id,
     groupId: Id,
     pagination: PaginationParams,
   }))

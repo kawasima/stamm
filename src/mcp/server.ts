@@ -29,7 +29,7 @@ export function createStammServer(behaviors: Behaviors, opts: StammServerOptions
     if (allow(def.name, def.annotations?.readOnlyHint === true)) registerSimpleTool(server, behaviors, def, opts.actorId);
   }
   if (allow("issue_update", false)) registerIssueUpdateTool(server, behaviors, opts.actorId);
-  registerAdminTools(server, behaviors, opts.actorId, allow);
+  registerAdminTools(server, behaviors, opts.actorId, opts.scope);
 
   return server;
 }

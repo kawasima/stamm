@@ -19,16 +19,16 @@ describe("custom field definitions (registry)", () => {
       constraints: { minValue: 0, maxValue: 100 }, scope: {},
     });
     expect(def).toMatchObject({ name: "Story Points", fieldType: "integer" });
-    expect(await cf.getCustomFieldDefinition({ fieldId: def.id })).toEqual(def);
+    expect(await cf.getCustomFieldDefinition({ actorId: "u1", fieldId: def.id })).toEqual(def);
 
     const updated = await cf.updateCustomFieldDefinition({ actorId: "admin", fieldId: def.id, isRequired: true });
     expect(updated.isRequired).toBe(true);
 
-    const list = await cf.listCustomFieldDefinitions({ pagination: { limit: 20 } });
+    const list = await cf.listCustomFieldDefinitions({ actorId: "u1", pagination: { limit: 20 } });
     expect(list.items.map((d) => d.id)).toContain(def.id);
 
     await cf.deleteCustomFieldDefinition({ actorId: "admin", fieldId: def.id });
-    await expect(cf.getCustomFieldDefinition({ fieldId: def.id })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(cf.getCustomFieldDefinition({ actorId: "u1", fieldId: def.id })).rejects.toBeInstanceOf(NotFoundError);
     await db.destroy();
   });
 
@@ -38,7 +38,7 @@ describe("custom field definitions (registry)", () => {
       actorId: "admin", name: "Severity", fieldType: "list",
       possibleValues: ["low", "high"], constraints: {}, scope: { issueTypeIds: ["t1"] },
     });
-    const got = await cf.getCustomFieldDefinition({ fieldId: def.id });
+    const got = await cf.getCustomFieldDefinition({ actorId: "u1", fieldId: def.id });
     expect(got.possibleValues).toEqual(["low", "high"]);
     expect(got.scope.issueTypeIds).toEqual(["t1"]);
     await db.destroy();
@@ -49,7 +49,7 @@ describe("custom field definitions (registry)", () => {
     const global = await cf.createCustomFieldDefinition({ actorId: "admin", name: "G", fieldType: "string", constraints: {}, scope: {} });
     const scoped = await cf.createCustomFieldDefinition({ actorId: "admin", name: "S", fieldType: "string", constraints: {}, scope: { projectIds: ["p1"] } });
     const other = await cf.createCustomFieldDefinition({ actorId: "admin", name: "O", fieldType: "string", constraints: {}, scope: { projectIds: ["p2"] } });
-    const list = await cf.listCustomFieldDefinitions({ projectId: "p1", pagination: { limit: 20 } });
+    const list = await cf.listCustomFieldDefinitions({ actorId: "u1", projectId: "p1", pagination: { limit: 20 } });
     const ids = list.items.map((d) => d.id);
     expect(ids).toContain(global.id);
     expect(ids).toContain(scoped.id);
