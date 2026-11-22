@@ -24,6 +24,15 @@ import { createHttpServer } from "../http/server.js";
  * dump fails, the minted keys are revoked. Private keys are never logged, since
  * stderr can leak into system logs.
  */
+/** A positive whole number from the environment; a typo must not silently lift a limit. */
+function limitFromEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`${name} must be a positive whole number, got "${raw}"`);
+  return n;
+}
+
 async function main(): Promise<void> {
   const dbPath = process.env.STAMM_DB ?? "stamm.db";
   const db = makeSqlite(dbPath);
@@ -43,6 +52,8 @@ async function main(): Promise<void> {
     });
   }
 
+  const callsPerMinute = limitFromEnv("STAMM_CALLS_PER_MINUTE");
+  const failuresPerMinute = limitFromEnv("STAMM_AUTH_FAILURES_PER_MINUTE");
   const path = process.env.STAMM_HTTP_PATH ?? "/mcp";
   const server = createHttpServer({
     behaviors,
@@ -50,6 +61,10 @@ async function main(): Promise<void> {
     ctx,
     path,
     authConfig: { issuer: process.env.STAMM_JWT_ISS, audience: process.env.STAMM_JWT_AUD },
+    rateLimit: process.env.STAMM_RATE_LIMIT === "off" ? false : {
+      ...(callsPerMinute !== undefined ? { callsPerMinute } : {}),
+      ...(failuresPerMinute !== undefined ? { failuresPerMinute } : {}),
+    },
   });
 
   const port = Number(process.env.STAMM_HTTP_PORT ?? 3000);

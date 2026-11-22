@@ -8,7 +8,7 @@ import { createSqlBehaviors, makeCtx } from "../impl/index.js";
 import { createTestDb } from "../impl/test-db.js";
 import { ensureBootstrapped, issueSeedKeys } from "../impl/bootstrap.js";
 import type { IssuedCredential } from "../schema/index.js";
-import { createHttpServer } from "./server.js";
+import { createHttpServer, type RateLimitOptions } from "./server.js";
 
 const servers: Server[] = [];
 const clients: Client[] = [];
@@ -117,29 +117,93 @@ describe("createHttpServer", () => {
     expect(res.status).toBe(401);
   });
 
-  it("throttles a caller that exceeds the per-IP rate limit with 429", async () => {
-    const db = await createTestDb();
-    const ctx = makeCtx(db);
-    const behaviors = createSqlBehaviors(db);
-    await ensureBootstrapped(behaviors);
-    const server = createHttpServer({ behaviors, ctx, rateLimit: { windowMs: 60_000, max: 2 } });
-    servers.push(server);
-    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
-    const port = (server.address() as AddressInfo).port;
+  describe("limits", () => {
+    /** Two keys of two users, and a clock the test moves. */
+    async function limited(rateLimit: RateLimitOptions | false) {
+      const db = await createTestDb();
+      const ctx = makeCtx(db);
+      const behaviors = createSqlBehaviors(db);
+      const seed = (await ensureBootstrapped(behaviors))!;
+      const keys = await issueSeedKeys(behaviors, seed);
+      let now = 1_000_000;
+      const server = createHttpServer({ behaviors, ctx, rateLimit, now: () => now });
+      servers.push(server);
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+      const port = (server.address() as AddressInfo).port;
+      const admin = await tokenFor(seed.adminId, keys.adminKey);
+      const member = await tokenFor(seed.memberId, keys.memberKey);
+      const call = (id = 1) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "project_list", arguments: { pagination: { limit: 1 } } } });
+      const post = (token: string | undefined, body: unknown = call()) =>
+        fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify(body),
+        });
+      const statuses = async (n: number, token?: string) => {
+        const out: number[] = [];
+        for (let i = 0; i < n; i++) out.push((await post(token)).status);
+        return out;
+      };
+      return { behaviors, seed, keys, admin, member, call, post, statuses, advance: (ms: number) => { now += ms; } };
+    }
 
-    const hit = () =>
-      fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      });
+    it("limits each key on its own, says when to come back, and lets it back in then", async () => {
+      const w = await limited({ callsPerMinute: 6 }); // 2 at once, then one every 10 s
+      expect(await w.statuses(3, w.member)).toEqual([200, 200, 429]);
+      expect(await w.statuses(1, w.admin)).toEqual([200]); // same address, another key
+      const refused = await w.post(w.member);
+      expect(refused.headers.get("retry-after")).toBe("10");
+      w.advance(9_000);
+      expect(await w.statuses(1, w.member)).toEqual([429]);
+      w.advance(1_000);
+      expect(await w.statuses(2, w.member)).toEqual([200, 429]);
+    });
 
-    const first = await hit();
-    const second = await hit();
-    const third = await hit();
-    // First two are allowed (and fail auth as 401); the third trips the limiter.
-    expect(first.status).toBe(401);
-    expect(second.status).toBe(401);
-    expect(third.status).toBe(429);
+    it("counts the calls in a batch, not the request that carries them", async () => {
+      const w = await limited({ callsPerMinute: 30 }); // 10 at once
+      const batch = (n: number) => Array.from({ length: n }, (_, i) => w.call(i + 1));
+      expect((await w.post(w.member, batch(11))).status).toBe(413); // never possible
+      w.advance(60_000);
+      expect((await w.post(w.member, batch(8))).status).toBe(200);
+      expect((await w.post(w.member, batch(3))).status).toBe(429);
+    });
+
+    it("gives two keys of one user a budget each", async () => {
+      const w = await limited({ callsPerMinute: 3 });
+      const second = await w.behaviors.issueUserKey({ actorId: w.seed.adminId, userId: w.seed.memberId });
+      expect(await w.statuses(2, w.member)).toEqual([200, 429]);
+      expect(await w.statuses(1, await tokenFor(w.seed.memberId, second))).toEqual([200]);
+    });
+
+    it("limits failed authentications per address without touching keys in use there", async () => {
+      const w = await limited({ failuresPerMinute: 3 });
+      expect(await w.statuses(1, w.member)).toEqual([200]);
+      expect(await w.statuses(5)).toEqual([401, 401, 401, 429, 429]);
+      expect((await w.post(undefined)).headers.get("retry-after")).toBe("20");
+      expect(await w.statuses(5, w.member)).toEqual([200, 200, 200, 200, 200]);
+      // a key not yet seen here waits like everyone else, then is let in and stays in
+      expect(await w.statuses(1, w.admin)).toEqual([429]);
+      w.advance(20_000);
+      expect(await w.statuses(1, w.admin)).toEqual([200]);
+      expect(await w.statuses(1)).toEqual([401]);
+      expect(await w.statuses(2, w.admin)).toEqual([200, 200]);
+    });
+
+    it("does not let a client retrying a revoked key lock out the others behind its address", async () => {
+      const w = await limited({ failuresPerMinute: 3 });
+      expect(await w.statuses(1, w.member)).toEqual([200]);
+      expect(await w.statuses(1, w.admin)).toEqual([200]);
+      await w.behaviors.revokeUserKey({ actorId: w.seed.adminId, userId: w.seed.memberId, keyId: w.keys.memberKey.keyId });
+      expect(new Set(await w.statuses(8, w.member))).toEqual(new Set([401]));
+      expect(await w.statuses(3, w.admin)).toEqual([200, 200, 200]);
+      w.advance(6 * 60_000); // no longer remembered: now it is refused before any work
+      expect(await w.statuses(5, w.member)).toEqual([401, 401, 401, 429, 429]);
+    });
+
+    it("can be turned off", async () => {
+      const w = await limited(false);
+      expect(new Set(await w.statuses(20, w.member))).toEqual(new Set([200]));
+      expect((await w.post(w.member, Array.from({ length: 300 }, (_, i) => w.call(i + 1)))).status).toBe(200);
+    });
   });
 });

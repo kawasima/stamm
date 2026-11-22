@@ -29,7 +29,7 @@ export interface BridgeOptions {
 }
 
 const FORWARD_REQUEST_HEADERS = ["content-type", "accept", "mcp-protocol-version", "mcp-session-id"];
-const FORWARD_RESPONSE_HEADERS = ["content-type", "mcp-session-id", "cache-control"];
+const FORWARD_RESPONSE_HEADERS = ["retry-after", "content-type", "mcp-session-id", "cache-control"];
 
 /**
  * A local MCP endpoint that signs a fresh short-lived JWT for every request and

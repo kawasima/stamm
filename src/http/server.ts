@@ -6,13 +6,14 @@ import type { Behaviors } from "../mcp/behaviors.js";
 import type { Ctx } from "../impl/ctx.js";
 import { UnauthorizedError } from "../impl/errors.js";
 import type { KeyScope } from "../schema/index.js";
-import { authenticate, type AuthConfig } from "./auth.js";
+import { authenticate, claimedKeyId, type AuthConfig } from "./auth.js";
+import { CallLimiter, FailureLimiter, RateLimitedError } from "./rate-limit.js";
 
 export interface RateLimitOptions {
-  /** Sliding-window length in milliseconds. */
-  windowMs: number;
-  /** Max requests allowed per client IP per window. */
-  max: number;
+  /** Calls per minute for each key (default 600). A key may spend a third of it at once. */
+  callsPerMinute?: number;
+  /** Failed authentications per minute for each client address (default 60). */
+  failuresPerMinute?: number;
 }
 
 export interface HttpServerOptions {
@@ -31,45 +32,28 @@ export interface HttpServerOptions {
   /** Max request body size in bytes (default 1 MiB). Larger bodies get 413. */
   maxBodyBytes?: number;
   /**
-   * Per-IP request rate limit (default 600 req/min). Pass `false` to disable
-   * (e.g. when an upstream proxy already enforces limits). This is an in-process
-   * fixed-window guard against floods/auth brute-force — not a substitute for an
-   * edge limiter, but a safe default for a directly-exposed server.
+   * Limits on calls per key and on failed authentications per address (see
+   * rate-limit.ts). Pass `false` to disable both, e.g. when a proxy in front
+   * enforces them.
    */
   rateLimit?: RateLimitOptions | false;
+  /** The current time in milliseconds, for the limits. */
+  now?: () => number;
 }
 
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
-const DEFAULT_RATE_LIMIT: RateLimitOptions = { windowMs: 60_000, max: 600 };
+const DEFAULT_CALLS_PER_MINUTE = 600;
+const DEFAULT_FAILURES_PER_MINUTE = 60;
 /** Slowloris guards: cap how long headers and a whole request may take. */
 const HEADERS_TIMEOUT_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
-/** A fixed-window per-key counter. Returns false when the key is over budget. */
-function makeRateLimiter(opts: RateLimitOptions): (key: string, now: number) => boolean {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  return (key, now) => {
-    const w = windows.get(key);
-    if (!w || now >= w.resetAt) {
-      windows.set(key, { count: 1, resetAt: now + opts.windowMs });
-      // Opportunistically drop expired windows so the map can't grow unbounded.
-      if (windows.size > 10_000) {
-        for (const [k, v] of windows) if (now >= v.resetAt) windows.delete(k);
-      }
-      return true;
-    }
-    if (w.count >= opts.max) return false;
-    w.count++;
-    return true;
-  };
-}
-
 /** Thrown by readJson when the body exceeds the cap; mapped to HTTP 413. */
 class PayloadTooLargeError extends Error {}
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
   const text = JSON.stringify(body);
-  res.writeHead(status, { "Content-Type": "application/json" });
+  res.writeHead(status, { "Content-Type": "application/json", ...headers });
   res.end(text);
 }
 
@@ -100,7 +84,11 @@ async function readJson(req: IncomingMessage, maxBytes: number): Promise<unknown
 export function createHttpServer(opts: HttpServerOptions): Server {
   const path = opts.path ?? "/mcp";
   const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
-  const rl = opts.rateLimit === false ? undefined : makeRateLimiter(opts.rateLimit ?? DEFAULT_RATE_LIMIT);
+  const now = opts.now ?? Date.now;
+  const limits = opts.rateLimit === false ? undefined : {
+    calls: new CallLimiter(opts.rateLimit?.callsPerMinute ?? DEFAULT_CALLS_PER_MINUTE),
+    failures: new FailureLimiter(opts.rateLimit?.failuresPerMinute ?? DEFAULT_FAILURES_PER_MINUTE),
+  };
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
@@ -108,18 +96,24 @@ export function createHttpServer(opts: HttpServerOptions): Server {
         const url = new URL(req.url ?? "/", "http://localhost");
         if (url.pathname !== path) return sendJson(res, 404, { error: "not found" });
 
-        // Rate-limit per client IP before doing any auth/DB work, so a flood of
-        // bad-token requests can't exhaust the backend.
-        if (rl) {
-          const ip = req.socket.remoteAddress ?? "unknown";
-          if (!rl(ip, Date.now())) return sendJson(res, 429, { error: "rate limit exceeded" });
-        }
+        const authorization = req.headers.authorization;
+        const verify = () => authenticate(opts.ctx, authorization, opts.authConfig);
+        const { actorId, keyId, scope } = limits
+          ? await limits.failures.guard(req.socket.remoteAddress ?? "unknown", claimedKeyId(authorization), now, verify)
+          : await verify();
+        // The request itself is one call; a batch is charged for the rest once read.
+        limits?.calls.spend(keyId, 1, now());
 
-        const { actorId, scope } = await authenticate(opts.ctx, req.headers.authorization, opts.authConfig);
         const restricted = scope.readOnly === true || scope.projectIds !== undefined;
         if (restricted && !opts.scopedBehaviors) {
           console.error("[stamm-http] a scoped key was presented but no scopedBehaviors is configured; refusing");
           return sendJson(res, 500, { error: "internal error" });
+        }
+
+        const parsedBody = req.method === "POST" ? await readJson(req, maxBodyBytes) : undefined;
+        if (limits && Array.isArray(parsedBody) && parsedBody.length > 1) {
+          if (parsedBody.length > limits.calls.maxBatch) throw new PayloadTooLargeError(`a batch may hold at most ${limits.calls.maxBatch} calls`);
+          limits.calls.spend(keyId, parsedBody.length - 1, now());
         }
 
         const served = restricted ? opts.scopedBehaviors!(scope) : opts.behaviors;
@@ -132,11 +126,14 @@ export function createHttpServer(opts: HttpServerOptions): Server {
         });
         await server.connect(transport);
 
-        const parsedBody = req.method === "POST" ? await readJson(req, maxBodyBytes) : undefined;
         await transport.handleRequest(req, res, parsedBody);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
           if (!res.headersSent) sendJson(res, 401, { error: err.message });
+          return;
+        }
+        if (err instanceof RateLimitedError) {
+          if (!res.headersSent) sendJson(res, 429, { error: err.message }, { "Retry-After": String(err.retryAfterSec) });
           return;
         }
         if (err instanceof PayloadTooLargeError) {

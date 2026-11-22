@@ -22,6 +22,8 @@ const INVALID = "invalid or expired token";
 
 export interface Authenticated {
   actorId: string;
+  /** The key that signed the token. */
+  keyId: string;
   /** The scope of the key that signed the token ({} = unrestricted). */
   scope: KeyScope;
 }
@@ -94,9 +96,19 @@ export async function authenticate(
     // A scope that doesn't parse must not fall back to "unrestricted".
     const scope = KeyScope.safeParse(JSON.parse(row.scope));
     if (!scope.success) throw new UnauthorizedError(INVALID);
-    return { actorId: sub, scope: scope.data };
+    return { actorId: sub, keyId: row.key_id, scope: scope.data };
   }
   throw new UnauthorizedError(INVALID);
+}
+
+/** The key a token says it was signed with. Unverified: good for choosing a limit, not for trust. */
+export function claimedKeyId(authorizationHeader: string | undefined): string | undefined {
+  try {
+    const kid = decodeProtectedHeader((authorizationHeader ?? "").replace(/^Bearer /, "").trim()).kid;
+    return typeof kid === "string" && kid.length <= 200 ? kid : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Reject tokens for a user that has been deleted or deactivated since signing. */

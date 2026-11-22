@@ -12,3 +12,4 @@ rather than editing it.
 | [0003](0003-custom-fields-are-schema-on-write-eav.md) | Custom fields are Schema-on-Write EAV | Accepted |
 | [0005](0005-every-contract-names-its-actor.md) | Every contract names its actor, and configuration is read under the same rules as issues | Accepted |
 | [0006](0006-issue-history-is-complete-and-listed-in-bulk.md) | Issue history is complete, ordered, and listed per project | Accepted |
+| [0007](0007-limits-by-key-and-by-failed-authentication.md) | Calls are limited by key, failed authentications by address | Accepted |

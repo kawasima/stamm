@@ -288,6 +288,14 @@ curl -H "Authorization: Bearer $TOKEN" \
 MCP clients that support a remote (Streamable HTTP) server can connect by URL
 with the same `Authorization` header. Requests without a valid token get `401`.
 
+Each key may make 600 calls per minute, 200 of them at once (a batch counts as the
+calls it holds). Failed authentications are limited to 60 per minute for each client
+address; a key that has recently succeeded from that address is not affected by
+others' failures there. A refused request gets `429` with `Retry-After`. Set
+`STAMM_CALLS_PER_MINUTE` and `STAMM_AUTH_FAILURES_PER_MINUTE` to change them, or
+`STAMM_RATE_LIMIT=off` when a proxy in front enforces limits. They are kept in
+process, so several servers each have their own.
+
 ### Clients that can't sign tokens — the bridge
 
 Tokens live at most 15 minutes, so a client that can only send a static

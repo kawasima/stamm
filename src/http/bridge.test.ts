@@ -100,6 +100,20 @@ describe("createBridge", () => {
     expect(res.status).toBe(401);
   });
 
+  it("passes on when to come back after a limit", async () => {
+    const { db, behaviors, keys } = await setup();
+    const limited = await listen(createHttpServer({ behaviors, ctx: makeCtx(db), rateLimit: { callsPerMinute: 1 } }));
+    const port = await listen(createBridge({ upstream: `http://127.0.0.1:${limited}/mcp`, key: keys.adminKey as never }));
+    const post = () => fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect((await post()).status).toBe(200);
+    const refused = await post();
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
   it("refuses callers outside the allowlist and serves those inside it", async () => {
     const { upstream, keys } = await setup();
     const denied = await listen(createBridge({ upstream, key: keys.adminKey as never, allowFrom: ["100.66.44.121"] }));
