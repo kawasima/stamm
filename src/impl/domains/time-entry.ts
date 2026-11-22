@@ -7,7 +7,7 @@ import { NotFoundError } from "../errors.js";
 import { assertInProject } from "../references.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
-import { assertCanReadIssue } from "../issue-visibility.js";
+import { assertCanReadIssue, issueEventsVisible } from "../issue-visibility.js";
 import { listPage } from "../listing.js";
 
 type TimeMethods = "createTimeEntry" | "getTimeEntry" | "updateTimeEntry" | "deleteTimeEntry" | "listTimeEntries" | "getTimeSummary";
@@ -16,8 +16,24 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
   const db = ctx.db;
   const codec = makeCodec(TimeEntry);
 
-  const load = async (id: string): Promise<TimeEntryT> => {
-    const row = await db.selectFrom("time_entries").selectAll().where("id", "=", id).executeTakeFirst();
+  /**
+   * SQL condition on a row of `time_entries`: may `actorId` read it? Their own; and in
+   * a project they can read, what is logged on no issue or on one whose Events they
+   * can read (an entry is an Event, and outlives its issue).
+   */
+  const entryVisible = async (actorId: string) => {
+    const ids = ctx.scope?.projectIds;
+    const inScope = ids === undefined ? sql<boolean>`1 = 1` : ids.length > 0 ? sql<boolean>`time_entries.project_id in (${sql.join(ids)})` : sql<boolean>`1 = 0`;
+    if (await isGlobalAdmin(ctx, actorId)) return inScope;
+    const issue = sql.ref("time_entries.issue_id");
+    return sql<boolean>`(${inScope} and (time_entries.user_id = ${actorId} or (
+      (exists(select 1 from project_memberships m where m.project_id = time_entries.project_id and m.user_id = ${actorId})
+        or exists(select 1 from project_categories c where c.project_id = time_entries.project_id and c.visibility = 'public'))
+      and (${issue} is null or ${await issueEventsVisible(ctx, actorId, issue)}))))`;
+  };
+
+  const loadFor = async (id: string, actorId: string): Promise<TimeEntryT> => {
+    const row = await db.selectFrom("time_entries").selectAll().where("id", "=", id).where(await entryVisible(actorId)).executeTakeFirst();
     if (!row) throw new NotFoundError("TimeEntry", id);
     return codec.decode(row);
   };
@@ -25,6 +41,7 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
   return {
     createTimeEntry: async (args) => {
       await assertCanWrite(ctx, args.projectId, args.actorId, "time_entry.create");
+      if (args.issueId) await assertCanReadIssue(ctx, args.issueId, args.actorId);
       await assertInProject(db, args.projectId, "issues", [args.issueId]);
       const entry = TimeEntry.parse({
         id: ctx.genId(), occurredAt: ctx.now(), projectId: args.projectId, issueId: args.issueId,
@@ -35,13 +52,11 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
     },
 
     getTimeEntry: async ({ actorId, timeEntryId }) => {
-      const entry = await load(timeEntryId);
-      await assertCanReadProject(ctx, entry.projectId, actorId);
-      return entry;
+      return loadFor(timeEntryId, actorId);
     },
 
     updateTimeEntry: async (args) => {
-      const current = await load(args.timeEntryId);
+      const current = await loadFor(args.timeEntryId, args.actorId);
       await assertCanWrite(ctx, current.projectId, args.actorId, "time_entry.update");
       const patch: Record<string, unknown> = {};
       for (const f of ["activityId", "hours", "spentOn", "comment"] as const) {
@@ -53,7 +68,7 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
     },
 
     deleteTimeEntry: async ({ actorId, timeEntryId }) => {
-      const current = await load(timeEntryId);
+      const current = await loadFor(timeEntryId, actorId);
       await assertCanWrite(ctx, current.projectId, actorId, "time_entry.delete");
       await db.deleteFrom("time_entries").where("id", "=", timeEntryId).execute();
     },
@@ -68,9 +83,8 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       }
       const ownOnly = !isAdmin && !args.projectId && !args.issueId;
       const effectiveUserId = ownOnly ? args.actorId : args.userId;
-      let q = db.selectFrom("time_entries").selectAll();
+      let q = db.selectFrom("time_entries").selectAll().where(await entryVisible(args.actorId));
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
-      if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (args.issueId) q = q.where("issue_id", "=", args.issueId);
       if (effectiveUserId) q = q.where("user_id", "=", effectiveUserId);
       if (args.activityId) q = q.where("activity_id", "=", args.activityId);
@@ -91,9 +105,8 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       }
       const ownOnly = !isAdmin && !args.projectId && !args.issueId;
       const effectiveUserId = ownOnly ? args.actorId : args.userId;
-      let q = db.selectFrom("time_entries");
+      let q = db.selectFrom("time_entries").where(await entryVisible(args.actorId));
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
-      if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (args.issueId) q = q.where("issue_id", "=", args.issueId);
       if (effectiveUserId) q = q.where("user_id", "=", effectiveUserId);
       if (args.spentOnFrom) q = q.where("spent_on", ">=", args.spentOnFrom);

@@ -1,3 +1,4 @@
+import { inTransaction } from "../tx.js";
 import { sql } from "kysely";
 import { DraftIssue, DraftConversion } from "../../schema/index.js";
 import type { DraftIssue as DraftIssueT } from "../../schema/index.js";
@@ -25,10 +26,9 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
   const db = ctx.db;
   const codec = makeCodec(DraftIssue);
   const conversionCodec = makeCodec(DraftConversion);
-  const issues = issueBehaviors(ctx);
 
-  const load = async (id: string): Promise<DraftIssueT> => {
-    const row = await db.selectFrom("draft_issues").selectAll().where("id", "=", id).executeTakeFirst();
+  const load = async (id: string, from = db): Promise<DraftIssueT> => {
+    const row = await from.selectFrom("draft_issues").selectAll().where("id", "=", id).executeTakeFirst();
     if (!row) throw new NotFoundError("DraftIssue", id);
     return codec.decode(row);
   };
@@ -72,19 +72,19 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
       return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
-    convertDraftToIssue: async ({ draftId, issueTypeId, priorityId, statusId, actorId }) => {
-      const draft = await load(draftId);
+    convertDraftToIssue: ({ draftId, issueTypeId, priorityId, statusId, actorId }) => inTransaction(db, async (trx) => {
+      const draft = await load(draftId, trx);
       // createIssue asserts issue.create on the draft's project and resolves the
       // default status when statusId is omitted.
-      const issue = await issues.createIssue({
+      const issue = await issueBehaviors({ ...ctx, db: trx }).createIssue({
         actorId, projectId: draft.projectId, issueTypeId, priorityId,
         ...(statusId !== undefined ? { statusId } : {}),
         subject: draft.title, ...(draft.body !== undefined ? { description: draft.body } : {}),
       });
       const conversion = DraftConversion.parse({ id: ctx.genId(), draftId, issueId: issue.id, userId: actorId, occurredAt: ctx.now() });
-      await db.insertInto("draft_conversions").values(conversionCodec.encode(conversion) as never).execute();
-      await appendActivity(ctx, db, { projectId: draft.projectId, userId: actorId, action: "draft_converted", targetType: "issue", targetId: issue.id });
+      await trx.insertInto("draft_conversions").values(conversionCodec.encode(conversion) as never).execute();
+      await appendActivity(ctx, trx, { projectId: draft.projectId, userId: actorId, action: "draft_converted", targetType: "issue", targetId: issue.id });
       return { issue, conversion };
-    },
+    }),
   };
 }

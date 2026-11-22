@@ -21,7 +21,7 @@ import { appendActivity } from "../timeline.js";
 import { recordEstimationChange, recordScheduleChange, recordStatusChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, assertAssignable } from "../permissions.js";
-import { assertCanReadIssue, issueVisible, readableIssueIds } from "../issue-visibility.js";
+import { asMissing, assertCanReadIssue, assertCanWriteIssue, issueVisible, readableIssueIds } from "../issue-visibility.js";
 import { contains, listPage, nullsLast, onOrAfter, onOrBefore, text } from "../listing.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
@@ -182,7 +182,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         .where("number", "=", number)
         .executeTakeFirst();
       if (!row) throw new NotFoundError("Issue", key);
-      return seenOrNotFound(actorId, issueCodec.decode(row));
+      return asMissing("Issue", key, () => seenOrNotFound(actorId, issueCodec.decode(row)));
     },
 
     getIssueDetail: async ({ actorId, issueId }) => {
@@ -211,13 +211,15 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     },
 
     updateIssue: async (args) => {
+      await assertCanWriteIssue(ctx, args.issueId, args.actorId, "issue.update");
       const issue = await loadIssue(args.issueId);
-      await assertCanWrite(ctx, issue.projectId, args.actorId, "issue.update");
-      if (args.customFields !== undefined) {
+      // Which fields apply depends on the type, so a new type is checked against the
+      // values the issue already has.
+      if (args.customFields !== undefined || (args.issueTypeId !== undefined && args.issueTypeId !== issue.issueTypeId)) {
         await validateCustomFields(ctx, {
           projectId: issue.projectId,
           issueTypeId: args.issueTypeId ?? issue.issueTypeId,
-          values: args.customFields,
+          values: args.customFields ?? issue.customFields,
         });
       }
       const patch: Partial<IssueT> = {};
@@ -244,8 +246,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     },
 
     deleteIssue: async ({ actorId, issueId }) => {
+      await assertCanWriteIssue(ctx, issueId, actorId, "issue.delete");
       const issue = await loadIssue(issueId);
-      await assertCanWrite(ctx, issue.projectId, actorId, "issue.delete");
       await inTransaction(db, async (trx) => {
         // Delete the Resource (the issue); its current state goes with it (cascade).
         // The Events stay: issue_status_changes / issue_schedule_changes /
@@ -259,13 +261,16 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     },
 
     moveIssue: async ({ actorId, issueId, targetProjectId, newIssueTypeId }) => {
+      await assertCanWriteIssue(ctx, issueId, actorId, "issue.move");
       const issue = await loadIssue(issueId);
-      await assertCanWrite(ctx, issue.projectId, actorId, "issue.move");
       const targetProj = await db.selectFrom("projects").select("identifier").where("id", "=", targetProjectId).executeTakeFirst();
       if (!targetProj) throw new NotFoundError("Project", targetProjectId);
       // Moving an issue INTO a project is a write there too — require move rights
       // in the destination, not just the source.
       await assertCanWrite(ctx, targetProjectId, actorId, "issue.move");
+      // Tags belong to the project and stay. Field values are the issue's own data:
+      // if one doesn't apply there, the move is refused rather than the value lost.
+      await validateCustomFields(ctx, { projectId: targetProjectId, issueTypeId: newIssueTypeId ?? issue.issueTypeId, values: issue.customFields });
       let moved!: IssueT;
       await inTransaction(db, async (trx) => {
         const maxRow = await trx

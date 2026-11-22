@@ -15,3 +15,4 @@ rather than editing it.
 | [0007](0007-limits-by-key-and-by-failed-authentication.md) | Calls are limited by key, failed authentications by address | Accepted |
 | [0008](0008-the-database-guards-references.md) | The database guards references | Accepted |
 | [0009](0009-contracts-are-kept-both-ways.md) | Contracts are kept both ways | Accepted |
+| [0010](0010-reading-comes-before-writing-and-what-holds-keeps-holding.md) | Reading comes before writing, and what holds keeps holding | Accepted |

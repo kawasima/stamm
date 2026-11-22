@@ -80,7 +80,6 @@ describe("writing a reference to something that does not exist", () => {
       "project parent": () => b.setProjectParent({ actorId, childProjectId: s.projectId, parentProjectId: no }),
       "new project's parent": () => b.createProject({ actorId, identifier: "x", name: "X", parentProjectId: no }),
       "template priority": () => b.createIssueTemplate({ actorId, projectId: s.projectId, name: "T", descriptionTemplate: "", defaultPriorityId: no }),
-      "logged time": () => b.createTimeEntry({ actorId, projectId: s.projectId, userId: s.memberId, issueId: no, activityId: "dev", hours: 1, spentOn: "2026-01-01" }),
       "time by": () => b.createTimeEntry({ actorId, projectId: s.projectId, userId: no, activityId: "dev", hours: 1, spentOn: "2026-01-01" }),
       "group member": () => b.addGroupMember({ actorId, groupId: no, userId: s.memberId }),
       "user state": () => b.setUserStatus({ actorId, userId: no, status: "active" }),
@@ -90,6 +89,8 @@ describe("writing a reference to something that does not exist", () => {
       expect(err, name).toBeInstanceOf(ValidationError);
       expect(err!.message, name).not.toMatch(/constraint|FOREIGN|_id\b/i);
     }
+    // an issue that isn't there looks like one the actor can't see
+    await expect(b.createTimeEntry({ actorId, projectId: s.projectId, userId: s.memberId, issueId: no, activityId: "dev", hours: 1, spentOn: "2026-01-01" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(b.createIssue({ ...base, priorityId: no })).rejects.toThrow(/priorityId/);
     // and none of it was kept
     expect((await b.listIssues({ actorId, filter: { projectId: s.projectId }, ...page })).items).toHaveLength(1);

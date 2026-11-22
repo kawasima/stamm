@@ -6,6 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
+import { issueVisible } from "../issue-visibility.js";
 import { listPage } from "../listing.js";
 
 type ViewMethods =
@@ -91,7 +92,7 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
       // Reordering someone's private view needs the same access as reading it, and
       // the card must be an issue of this view's project, not an arbitrary id.
       await assertCanReadView(view, actorId);
-      const card = await db.selectFrom("issues").select("project_id").where("id", "=", issueId).executeTakeFirst();
+      const card = await db.selectFrom("issues").select("project_id").where("id", "=", issueId).where(await issueVisible(ctx, actorId)).executeTakeFirst();
       if (!card || card.project_id !== view.projectId) throw new NotFoundError("Issue", issueId);
 
       const specifiers = [beforeIssueId, afterIssueId, position].filter((v) => v !== undefined);
@@ -128,7 +129,9 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
 
     listBoardPositions: async ({ actorId, viewId }) => {
       await assertCanReadView(await load(viewId), actorId);
-      const rows = await db.selectFrom("issue_board_positions").selectAll().where("view_id", "=", viewId).orderBy("position").execute();
+      const visible = await issueVisible(ctx, actorId);
+      const rows = await db.selectFrom("issue_board_positions").selectAll().where("view_id", "=", viewId)
+        .where("issue_id", "in", (eb) => eb.selectFrom("issues").select("id").where(visible)).orderBy("position").execute();
       return { positions: rows.map((r) => posCodec.decode(r)) };
     },
   };

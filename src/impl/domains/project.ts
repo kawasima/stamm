@@ -13,6 +13,7 @@ import { contains, listPage, text } from "../listing.js";
 import { assertGlobalAdmin, assertCanReadProject, canReadProject, isGlobalAdmin } from "../permissions.js";
 import { assertNoCycle } from "../references.js";
 import { inTransaction } from "../tx.js";
+import { appendActivity } from "../timeline.js";
 
 type ProjectMethods =
   | "createProject" | "getProject" | "getProjectByIdentifier" | "updateProject" | "deleteProject" | "listProjects"
@@ -214,6 +215,14 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       const row = await db.selectFrom("project_memberships").select("id").where("project_id", "=", projectId).where("user_id", "=", userId).executeTakeFirst();
       if (!row) throw new NotFoundError("ProjectMembership", `${projectId}/${userId}`);
       await inTransaction(db, async (trx) => {
+        // Assignees are members, so leaving takes them off the project's issues.
+        const assigned = await trx.selectFrom("issue_assignees as ia").innerJoin("issues as i", "i.id", "ia.issue_id")
+          .select(["ia.id as id", "i.id as issueId"]).where("i.project_id", "=", projectId).where("ia.assignee_id", "=", userId).execute();
+        const occurredAt = ctx.now();
+        for (const a of assigned) {
+          await trx.deleteFrom("issue_assignees").where("id", "=", a.id).execute();
+          await appendActivity(ctx, trx, { projectId, userId: actorId, action: "assigned", targetType: "issue", targetId: a.issueId, occurredAt });
+        }
         await trx.deleteFrom("project_memberships").where("id", "=", row.id).execute();
       });
     },

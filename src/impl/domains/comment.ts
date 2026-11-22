@@ -6,8 +6,8 @@ import { ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent, notifyMentions, resolveMentionRecipients } from "../notifications.js";
-import { assertCanWrite, canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
-import { assertCanReadIssue } from "../issue-visibility.js";
+import { canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
+import { asMissing, assertCanReadIssue, assertCanWriteIssue } from "../issue-visibility.js";
 import { listPage } from "../listing.js";
 import { inTransaction } from "../tx.js";
 
@@ -44,8 +44,10 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
    * it can't see.
    */
   const assertCanModify = async (actorId: string, comment: Comment, perm: "comment.update" | "comment.delete"): Promise<void> => {
-    await assertCanReadIssue(ctx, comment.issueId, actorId);
-    await assertCanWrite(ctx, await issueProjectId(comment.issueId), actorId, perm);
+    const projectId = await asMissing("Comment", comment.id, () => assertCanWriteIssue(ctx, comment.issueId, actorId, perm));
+    if (comment.visibility === "private" && comment.authorId !== actorId && !(await canSeePrivateInProject(ctx, projectId, actorId))) {
+      throw new NotFoundError("Comment", comment.id);
+    }
     if (comment.authorId !== actorId && !(await isGlobalAdmin(ctx, actorId))) {
       throw new ForbiddenError(`User ${actorId} may not change a comment written by ${comment.authorId}`);
     }
@@ -53,8 +55,7 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
 
   return {
     createComment: async ({ issueId, actorId, body, visibility }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "comment.create");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "comment.create");
       const comment = Comment.parse({ id: ctx.genId(), occurredAt: ctx.now(), issueId, authorId: actorId, body, visibility: visibility ?? "public" });
       const authorId = await issueAuthor(issueId);
       // Resolved before the transaction: it reads through the normal connection.
@@ -65,14 +66,14 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
         await appendActivity(ctx, trx, { projectId, userId: actorId, action: "commented", targetType: "issue", targetId: issueId, occurredAt: comment.occurredAt });
         // A mentioned user gets the mention, not also a generic "commented".
         await notifyMentions(ctx, trx, { projectId, issueKey: key, commentId: comment.id, recipients: mentioned, occurredAt: comment.occurredAt });
-        await notifyIssueEvent(ctx, trx, { projectId, issueId, authorId, eventType: "issue.commented", title: "New comment", actorId, occurredAt: comment.occurredAt, exclude: mentioned });
+        await notifyIssueEvent(ctx, trx, { projectId, issueId, authorId, eventType: "issue.commented", title: "New comment", actorId, occurredAt: comment.occurredAt, exclude: mentioned, membersOnly: comment.visibility === "private" });
       });
       return comment;
     },
 
     getComment: async ({ actorId, commentId }) => {
       const comment = await loadComment(commentId);
-      await assertCanReadIssue(ctx, comment.issueId, actorId);
+      await asMissing("Comment", commentId, () => assertCanReadIssue(ctx, comment.issueId, actorId));
       // A private comment is members-only; hide it (NotFound, not Forbidden) from
       // a non-member who can otherwise read the issue. The author always sees it.
       if (comment.visibility === "private" && comment.authorId !== actorId) {

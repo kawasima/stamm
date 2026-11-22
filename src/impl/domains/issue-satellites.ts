@@ -18,8 +18,8 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertAssignable } from "../permissions.js";
-import { assertCanReadIssue, issueVisible } from "../issue-visibility.js";
+import { assertAssignable } from "../permissions.js";
+import { asMissing, assertCanReadIssue, assertCanWriteIssue, issueVisible } from "../issue-visibility.js";
 import { listPage } from "../listing.js";
 import { assertInProject, assertNoCycle } from "../references.js";
 import { inTransaction } from "../tx.js";
@@ -45,12 +45,6 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
   const watcherCodec = makeCodec(IssueWatcher);
   const relationCodec = makeCodec(IssueRelation);
 
-  const issueProjectId = async (issueId: string): Promise<string> => {
-    const row = await db.selectFrom("issues").select("project_id").where("id", "=", issueId).executeTakeFirst();
-    if (!row) throw new NotFoundError("Issue", issueId);
-    return row.project_id;
-  };
-
   /** Replace the single 0..1 satellite row for an issue and return the new value. */
   const upsertOne = async <T>(
     table: string,
@@ -67,8 +61,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
 
   return {
     setIssueAssignees: async ({ actorId, issueId, assigneeIds }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.assign");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.assign");
       await assertAssignable(ctx, projectId, assigneeIds);
       const assignees = assigneeIds.map((assigneeId) => IssueAssignee.parse({ id: ctx.genId(), issueId, assigneeId }));
       await inTransaction(db, async (trx) => {
@@ -81,8 +74,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     setIssueLabels: async ({ actorId, issueId, labelIds }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       await assertInProject(db, projectId, "labels", labelIds);
       const labels = labelIds.map((labelId) => IssueLabel.parse({ id: ctx.genId(), issueId, labelId }));
       await inTransaction(db, async (trx) => {
@@ -94,22 +86,19 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     setIssueCategory: async ({ actorId, issueId, categoryId }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       await assertInProject(db, projectId, "categories", [categoryId]);
       return upsertOne("issue_categories", categoryCodec, issueId, IssueCategory.parse({ id: ctx.genId(), issueId, categoryId }));
     },
 
     setIssueMilestone: async ({ actorId, issueId, milestoneId }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       await assertInProject(db, projectId, "milestones", [milestoneId]);
       return upsertOne("issue_milestones", milestoneCodec, issueId, IssueMilestone.parse({ id: ctx.genId(), issueId, milestoneId }));
     },
 
     setIssueParent: async ({ actorId, childIssueId, parentIssueId }) => {
-      const projectId = await issueProjectId(childIssueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertCanWriteIssue(ctx, childIssueId, actorId, "issue.update");
       // The parent must be an issue the actor can actually see — no linking to a
       // private issue in a project they have no access to.
       await assertCanReadIssue(ctx, parentIssueId, actorId);
@@ -123,8 +112,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     setIssueSchedule: async ({ actorId, issueId, startDate, dueDate }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       const value = IssueSchedule.parse({ id: ctx.genId(), issueId, startDate, dueDate });
       await inTransaction(db, async (trx) => {
         const old = await trx.selectFrom("issue_schedules").select(["start_date", "due_date"]).where("issue_id", "=", issueId).executeTakeFirst();
@@ -136,8 +124,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     setIssueEstimation: async ({ actorId, issueId, estimatedHours }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       const value = IssueEstimation.parse({ id: ctx.genId(), issueId, estimatedHours });
       await inTransaction(db, async (trx) => {
         const old = await trx.selectFrom("issue_estimations").select("estimated_hours").where("issue_id", "=", issueId).executeTakeFirst();
@@ -149,14 +136,12 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     setIssueProgress: async ({ actorId, issueId, doneRatio }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       return upsertOne("issue_progress", progressCodec, issueId, IssueProgress.parse({ id: ctx.genId(), issueId, doneRatio }));
     },
 
     setIssueIteration: async ({ actorId, issueId, iterationId }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      const projectId = await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       await assertInProject(db, projectId, "iterations", [iterationId]);
       return upsertOne("issue_iterations", iterationCodec, issueId, IssueIteration.parse({ id: ctx.genId(), issueId, iterationId }));
     },
@@ -183,8 +168,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     },
 
     createIssueRelation: async ({ actorId, issueId, relatedIssueId, relationType, delay }) => {
-      const projectId = await issueProjectId(issueId);
-      await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertCanWriteIssue(ctx, issueId, actorId, "issue.update");
       // The related issue must be visible to the actor — no relating to a private
       // issue they can't see.
       await assertCanReadIssue(ctx, relatedIssueId, actorId);
@@ -196,7 +180,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     deleteIssueRelation: async ({ actorId, relationId }) => {
       const row = await db.selectFrom("issue_relations").select("issue_id").where("id", "=", relationId).executeTakeFirst();
       if (!row) throw new NotFoundError("IssueRelation", relationId);
-      await assertCanWrite(ctx, await issueProjectId(row.issue_id), actorId, "issue.update");
+      await asMissing("IssueRelation", relationId, () => assertCanWriteIssue(ctx, row.issue_id, actorId, "issue.update"));
       await db.deleteFrom("issue_relations").where("id", "=", relationId).execute();
     },
 

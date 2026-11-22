@@ -6,6 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
+import { issueVisible } from "../issue-visibility.js";
 import { listPage, nullsLast, text } from "../listing.js";
 
 type IterationMethods =
@@ -69,6 +70,7 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
         .selectFrom("issue_iterations as ii")
         .innerJoin("issues as i", "i.id", "ii.issue_id")
         .innerJoin("statuses as s", "s.id", "i.status_id")
+        .where(await issueVisible(ctx, actorId, "i"))
         .select(["s.category as category", (eb) => eb.fn.countAll().as("cnt")])
         .where("ii.iteration_id", "=", iterationId)
         .groupBy("s.category")

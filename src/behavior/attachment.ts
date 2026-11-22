@@ -10,7 +10,8 @@ import { PaginatedResult } from "./common.js";
 /** Create an attachment (upload metadata — actual file storage is implementation concern) */
 export const CreateAttachment = z.function()
   .args(z.object({
-    targetType: z.string().min(1),
+    /** Only issues carry attachments. */
+    targetType: z.enum(["issue"]),
     targetId: Id,
     actorId: Id,
     filename: z.string().min(1).max(500),
@@ -35,7 +36,7 @@ export const DeleteAttachment = z.function()
 export const ListAttachments = z.function()
   .args(z.object({
     actorId: Id,
-    targetType: z.string().min(1),
+    targetType: z.enum(["issue"]),
     targetId: Id,
     pagination: PaginationParams,
   }))

@@ -150,6 +150,25 @@ export async function validateCustomFields(
   }
 }
 
+/**
+ * A definition says what its values mean, so it may not change into one that stored
+ * values contradict. Making a field required is not a contradiction: it asks for a
+ * value the next time fields are written.
+ */
+async function assertValuesFit(ctx: Ctx, def: CustomFieldDefinitionT): Promise<void> {
+  const db = ctx.db as unknown as Kysely<any>;
+  const rows = await db.selectFrom("issues").select(["project_id", "issue_type_id", "custom_fields"]).where("custom_fields", "like", `%${def.id}%`).execute();
+  let unfit = 0;
+  for (const r of rows as { project_id: string; issue_type_id: string; custom_fields: string }[]) {
+    const held = (JSON.parse(r.custom_fields) as CustomFieldValue[]).find((v) => v.fieldId === def.id);
+    if (!held) continue;
+    const applies = inScope(def.scope.projectIds, r.project_id) && inScope(def.scope.issueTypeIds, r.issue_type_id);
+    const valid = applies && (await validateValue(ctx, def, held.value).then(() => true, (e) => { if (e instanceof ValidationError) return false; throw e; }));
+    if (!valid) unfit++;
+  }
+  if (unfit > 0) throw new ConflictError(`${unfit} issues hold a value that this change would make invalid; clear those first`);
+}
+
 type CustomFieldMethods =
   | "createCustomFieldDefinition" | "getCustomFieldDefinition" | "updateCustomFieldDefinition"
   | "deleteCustomFieldDefinition" | "listCustomFieldDefinitions";
@@ -205,7 +224,10 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
         if (k !== "actorId" && k !== "fieldId" && v !== undefined) patch[k] = v;
       }
       const merged = CustomFieldDefinition.parse({ ...current, ...patch, id: args.fieldId });
-      await db.updateTable(TABLE).set(defCodec.encode(merged)).where("id", "=", args.fieldId).execute();
+      await inTransaction(db, async (trx) => {
+        await assertValuesFit({ ...ctx, db: trx }, merged);
+        await trx.updateTable(TABLE).set(defCodec.encode(merged)).where("id", "=", args.fieldId).execute();
+      });
       return merged;
     },
 

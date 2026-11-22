@@ -6,6 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
+import { issueVisible } from "../issue-visibility.js";
 import { listPage, nullsLast, text } from "../listing.js";
 
 type MilestoneMethods =
@@ -95,6 +96,7 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
         .selectFrom("issue_milestones as im")
         .innerJoin("issues as i", "i.id", "im.issue_id")
         .innerJoin("statuses as s", "s.id", "i.status_id")
+        .where(await issueVisible(ctx, actorId, "i"))
         .select(["s.category as category", (eb) => eb.fn.countAll().as("cnt")])
         .where("im.milestone_id", "=", milestoneId)
         .groupBy("s.category")

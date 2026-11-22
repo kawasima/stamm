@@ -3,8 +3,8 @@ import type { NotificationEventType } from "../schema/index.js";
 import type { Database } from "./db/schema.js";
 import type { Ctx } from "./ctx.js";
 import { extractMentions } from "./mentions.js";
-import { isMember } from "./permissions.js";
-import { assertCanReadIssue } from "./issue-visibility.js";
+import { canSeePrivateInProject, isMember } from "./permissions.js";
+import { assertCanReadIssue, readersAmong } from "./issue-visibility.js";
 
 export interface NotifyIssueInput {
   projectId: string;
@@ -18,6 +18,8 @@ export interface NotifyIssueInput {
   onlyRecipients?: string[];
   /** Users who already got a more specific notification for this event (e.g. a mention). */
   exclude?: Iterable<string>;
+  /** Only to members of the project, as for a private comment. */
+  membersOnly?: boolean;
 }
 
 /**
@@ -37,12 +39,18 @@ export async function notifyIssueEvent(ctx: Ctx, exec: Kysely<Database>, input: 
   }
   recipients.delete(input.actorId);
   for (const id of input.exclude ?? []) recipients.delete(id);
-  if (recipients.size === 0) return;
+  // Watching or having been assigned outlasts the right to read (a role changes, a
+  // project is made private), so it is asked now.
+  const theirs: Ctx = { db: exec, now: ctx.now, genId: ctx.genId }; // not limited by the writing key
+  const readers = await readersAmong(theirs, input.issueId, [...recipients]);
+  const to: string[] = [];
+  for (const id of readers) if (!input.membersOnly || (await canSeePrivateInProject(theirs, input.projectId, id))) to.push(id);
+  if (to.length === 0) return;
   const occurredAt = input.occurredAt ?? ctx.now();
   // One multi-row insert instead of a round-trip per recipient: a heavily
   // watched issue would otherwise make every write O(watchers) statements
   // inside the triggering transaction.
-  const rows = [...recipients].map((recipientId) => ({
+  const rows = to.map((recipientId) => ({
     id: ctx.genId(),
     recipient_id: recipientId,
     event_type: input.eventType,

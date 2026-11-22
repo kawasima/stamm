@@ -7,8 +7,7 @@ import type { KeyScope } from "../schema/index.js";
  * listed is hidden and refused for such a key, so a newly added tool is denied
  * until someone has audited it.
  *
- * Left out deliberately: attachments (non-issue targets skip the read check),
- * issue_move (crosses projects), and every global/admin write. Of the admin_*
+ * Left out deliberately: attachments (no such key has needed them), issue_move (crosses projects), and every global/admin write. Of the admin_*
  * tools, only reads of {@link PROJECT_SCOPED_RESOURCES} are open.
  */
 export const PROJECT_SCOPED_TOOLS: ReadonlySet<string> = new Set([

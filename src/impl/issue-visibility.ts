@@ -1,7 +1,8 @@
 import { sql, type RawBuilder } from "kysely";
 import type { Ctx } from "./ctx.js";
 import { NotFoundError } from "./errors.js";
-import { isGlobalAdmin } from "./permissions.js";
+import type { Permission } from "../schema/index.js";
+import { assertCanWrite, isGlobalAdmin } from "./permissions.js";
 
 /**
  * Who can read which issue, in one place. Everything that returns an issue, or
@@ -88,6 +89,35 @@ export async function canReadIssue(ctx: Ctx, issueId: string, actorId: string): 
 /** Gate a read of an issue or its current state. Absent and hidden look the same. */
 export async function assertCanReadIssue(ctx: Ctx, issueId: string, actorId: string): Promise<void> {
   if (!(await canReadIssue(ctx, issueId, actorId))) throw new NotFoundError("Issue", issueId);
+}
+
+/**
+ * Gate a write to an issue, or to something on it: the actor must be able to read it,
+ * and have the permission. Returns its project. A permission alone is not enough,
+ * since a role can hold it and still see only its own issues.
+ */
+export async function assertCanWriteIssue(ctx: Ctx, issueId: string, actorId: string, perm: Permission): Promise<string> {
+  const visible = await issueVisible(ctx, actorId);
+  const row = await ctx.db.selectFrom("issues").select("project_id").where("id", "=", issueId).where(visible).executeTakeFirst();
+  if (!row) throw new NotFoundError("Issue", issueId);
+  await assertCanWrite(ctx, row.project_id, actorId, perm);
+  return row.project_id;
+}
+
+/** Report something on an issue as missing itself when its issue is, so the issue's id stays out of it. */
+export async function asMissing<T>(entity: string, id: string, gate: () => Promise<T>): Promise<T> {
+  try {
+    return await gate();
+  } catch (err) {
+    throw err instanceof NotFoundError ? new NotFoundError(entity, id) : err;
+  }
+}
+
+/** Of `userIds`, those who can read the issue. */
+export async function readersAmong(ctx: Ctx, issueId: string, userIds: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const id of userIds) if (await canReadIssue(ctx, issueId, id)) out.push(id);
+  return out;
 }
 
 /** Gate a read of an issue's Events, which includes a deleted issue's. */
