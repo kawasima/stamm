@@ -1,4 +1,4 @@
-import { sql, type Kysely } from "kysely";
+import { sql, type Kysely, type RawBuilder } from "kysely";
 import type { z } from "zod";
 import {
   Category,
@@ -14,7 +14,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { contains, listPage, text, type Dir, type SortKey } from "../listing.js";
 import { assertCanReadProject, assertGlobalAdmin, assertNotLastAdmin, canReadProject, isGlobalAdmin, projectUser } from "../permissions.js";
 
 interface Paginated<T> {
@@ -44,6 +44,10 @@ interface CrudDef<S extends z.ZodTypeAny> {
   listedIn?: { table: string; column: string }[];
   /** Further conditions on changing or deleting a row. */
   guardChange?: (id: string, patch: Record<string, unknown> | undefined) => Promise<void>;
+  /** The order rows are listed in, by id if not given. May depend on the arguments. */
+  sort?: (args: Record<string, unknown>) => { by: string; keys: SortKey[] };
+  /** A condition for each further argument of the list contract. */
+  filters?: Record<string, (value: never, args: Record<string, unknown>) => RawBuilder<boolean> | Promise<RawBuilder<boolean>>>;
   /** Narrow which rows a reader sees. Applied to get and list alike. */
   readFilter?: (ctx: Ctx, args: Record<string, unknown>) => ((q: ConfigQuery) => ConfigQuery) | undefined;
   /**
@@ -140,22 +144,18 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   const list = async (args: Record<string, unknown>): Promise<Paginated<R>> => {
     guardRead();
     if (def.projectScoped) await assertCanReadProject(ctx, args.projectId as string, args.actorId as string);
-    const pagination = (args.pagination ?? {}) as { cursor?: string; limit?: number };
-    const limit = pagination.limit ?? 20;
-    const cursor = decodeCursor(pagination.cursor);
     let q = db.selectFrom(def.table).selectAll();
     if (def.projectScoped) q = q.where("project_id", "=", args.projectId as string);
     const narrow = def.readFilter?.(ctx, args);
     if (narrow) q = narrow(q) as typeof q;
-    if (cursor) q = q.where("id", ">", cursor);
-    const rows = await q.orderBy("id").limit(limit + 1).execute();
-    let items = rows.map((r) => codec.decode(r));
-    if (def.readProjection) {
-      const project = await def.readProjection(ctx, args);
-      items = items.map(project);
+    for (const [arg, condition] of Object.entries(def.filters ?? {})) {
+      if (args[arg] !== undefined) q = q.where(await condition(args[arg] as never, args));
     }
-    const page = buildPage(items, (e) => (e as { id: string }).id, limit);
-    return { items: page.items, nextCursor: page.nextCursor };
+    const sort = def.sort?.(args) ?? { by: "id", keys: [] };
+    const page = await listPage(q, { name: `${def.table} ${sort.by}`, keys: sort.keys }, `${def.table}.id`, args.pagination as never);
+    let items = page.items.map((r) => codec.decode(r) as R);
+    if (def.readProjection) items = items.map(await def.readProjection(ctx, args));
+    return { items, nextCursor: page.nextCursor };
   };
 
   return { create, get, update, remove, list };
@@ -172,12 +172,14 @@ type ConfigMethods =
   | "createUserGroup" | "getUserGroup" | "updateUserGroup" | "deleteUserGroup" | "listUserGroups";
 
 export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
-  const status = makeCrud(ctx, { table: "statuses", schema: Status, idArg: "statusId", entityName: "Status" });
-  const priority = makeCrud(ctx, { table: "priorities", schema: Priority, idArg: "priorityId", entityName: "Priority" });
-  const label = makeCrud(ctx, { table: "labels", schema: Label, idArg: "labelId", entityName: "Label", projectScoped: true });
-  const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType" });
-  const category = makeCrud(ctx, { table: "categories", schema: Category, idArg: "categoryId", entityName: "Category", projectScoped: true });
-  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true, listedIn: [{ table: "workflow_transitions", column: "role_ids" }] });
+  const inOrder = () => ({ by: "order", keys: [{ by: sql.ref("sort_order"), dir: "asc" as const }, text("name", "asc")] });
+  const byName = () => ({ by: "name", keys: [text("name", "asc")] });
+  const status = makeCrud(ctx, { table: "statuses", schema: Status, idArg: "statusId", entityName: "Status", sort: inOrder, filters: { category: (v: string) => sql<boolean>`category = ${v}` } });
+  const priority = makeCrud(ctx, { table: "priorities", schema: Priority, idArg: "priorityId", entityName: "Priority", sort: inOrder });
+  const label = makeCrud(ctx, { table: "labels", schema: Label, idArg: "labelId", entityName: "Label", projectScoped: true, sort: byName, filters: { query: (v: string) => contains(sql.ref("name"), v) } });
+  const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType", sort: inOrder });
+  const category = makeCrud(ctx, { table: "categories", schema: Category, idArg: "categoryId", entityName: "Category", projectScoped: true, sort: byName });
+  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true, sort: byName, listedIn: [{ table: "workflow_transitions", column: "role_ids" }] });
   // Users are global-admin-only to write, EXCEPT the very first user on an empty
   // database: someone has to mint the bootstrap admin before any admin exists.
   // Once any user exists this falls back to the admin check, so it can't be used
@@ -210,6 +212,24 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
       );
   };
   const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection, readFilter: userReadFilter,
+    sort: (args) => {
+      const by = (args.sortBy as "login" | "displayName" | "email" | undefined) ?? "login";
+      return { by, keys: [text({ login: "login", displayName: "display_name", email: "email" }[by], (args.sortDirection as Dir | undefined) ?? "asc")] };
+    },
+    filters: {
+      kind: (v: string) => sql<boolean>`kind = ${v}`,
+      status: (v: string) => {
+        const inactive = sql<boolean>`exists(select 1 from user_statuses us where us.user_id = users.id and us.status <> 'active')`;
+        return v === "active" ? sql<boolean>`not ${inactive}` : inactive;
+      },
+      // An address can be searched and sorted by only by those who may see it.
+      query: async (v: string, args) =>
+        sql<boolean>`(${contains(sql.ref("login"), v)} or ${contains(sql.ref("display_name"), v)} or ${(await isGlobalAdmin(ctx, args.actorId as string)) ? contains(sql.ref("email"), v) : sql<boolean>`1 = 0`})`,
+      sortBy: async (v: string, args) => {
+        if (v === "email" && !(await isGlobalAdmin(ctx, args.actorId as string))) throw new ForbiddenError("Only a global admin may sort users by email");
+        return sql<boolean>`1 = 1`;
+      },
+    },
     // Nobody could grant the role again.
     guardChange: async (id, patch) => {
       if (patch === undefined || (patch.kind !== undefined && patch.kind !== "admin")) await assertNotLastAdmin(ctx, id);
@@ -226,7 +246,7 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
       .executeTakeFirst();
     if (row) throw new ConflictError(`Login "${login}" is already taken`);
   };
-  const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup", workspaceOnly: true });
+  const group = makeCrud(ctx, { table: "user_groups", schema: UserGroup, idArg: "groupId", entityName: "UserGroup", workspaceOnly: true, sort: byName });
 
   return {
     createStatus: status.create, getStatus: status.get, updateStatus: status.update, deleteStatus: status.remove, listStatuses: status.list,

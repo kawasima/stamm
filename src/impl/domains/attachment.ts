@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { Attachment } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
@@ -5,7 +6,7 @@ import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, isGlobalAdmin } from "../permissions.js";
 import { assertCanReadIssue } from "../issue-visibility.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage } from "../listing.js";
 
 type AttachmentMethods = "createAttachment" | "getAttachment" | "deleteAttachment" | "listAttachments";
 
@@ -58,13 +59,9 @@ export function attachmentBehaviors(ctx: Ctx): Pick<Behaviors, AttachmentMethods
 
     listAttachments: async ({ actorId, targetType, targetId, pagination }) => {
       await gateRead(targetType, targetId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
-      let q = db.selectFrom("attachments").selectAll().where("target_type", "=", targetType).where("target_id", "=", targetId);
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (a) => a.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const q = db.selectFrom("attachments").selectAll().where("target_type", "=", targetType).where("target_id", "=", targetId);
+      const page = await listPage(q, { name: "attachments", keys: [{ by: sql.ref("occurred_at"), dir: "asc" }] }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
   };
 }

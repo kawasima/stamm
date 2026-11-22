@@ -11,7 +11,6 @@ import {
   Milestone,
   Iteration,
 } from "../../schema/index.js";
-import { IssueEstimationChange } from "../../schema/index.js";
 import type { Issue as IssueT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
@@ -23,7 +22,7 @@ import { recordEstimationChange, recordScheduleChange, recordStatusChange } from
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, assertAssignable } from "../permissions.js";
 import { assertCanReadIssue, issueVisible, readableIssueIds } from "../issue-visibility.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { contains, listPage, nullsLast, onOrAfter, onOrBefore, text } from "../listing.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
 import { assertInProject, PROJECT_ATTACHMENTS } from "../references.js";
@@ -96,6 +95,15 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       .selectAll(target)
       .executeTakeFirst();
     return row ? codec.decode(row as Record<string, unknown>) : undefined;
+  };
+
+  /** The issue holds `value` in the field, alone or among several. Types must match: "1" is not 1. */
+  const hasCustomField = ({ fieldId, value }: { fieldId: string; value: string | number | boolean }) => {
+    const type = typeof value === "string" ? sql`= 'text'` : typeof value === "number" ? sql`in ('integer', 'real')` : sql`= ${String(value)}`;
+    const same = typeof value === "boolean" ? sql`1 = 1` : sql`v.value = ${value}`;
+    return sql<boolean>`exists(
+      select 1 from json_each(issues.custom_fields) f, json_each(f.value, '$.value') v
+      where json_extract(f.value, '$.fieldId') = ${fieldId} and v.type ${type} and ${same})`;
   };
 
   return {
@@ -337,8 +345,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
 
     listChildIssues: async ({ actorId, parentIssueId, pagination }) => {
       await assertCanReadIssue(ctx, parentIssueId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
       let q = adb
         .selectFrom("issues")
         .selectAll("issues")
@@ -348,17 +354,13 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
           ),
         );
       q = q.where(await issueVisible(ctx, actorId));
-      if (cursor) q = q.where("issues.id", ">", cursor);
-      const rows = await q.orderBy("issues.id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r: Record<string, unknown>) => issueCodec.decode(r)), (i) => i.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: "children", keys: [{ by: sql.ref("issues.number"), dir: "asc" }] }, "issues.id", pagination);
+      return { items: page.items.map((r) => issueCodec.decode(r)), nextCursor: page.nextCursor };
     },
 
     listIssues: async (args) => {
       const f = args.filter ?? {};
-      const limit = args.pagination?.limit ?? 20;
-      const cursor = decodeCursor(args.pagination?.cursor);
-      const dir: "asc" | "desc" = args.sortDirection === "desc" ? "desc" : "asc";
+      const dir = args.sortDirection ?? "asc";
       const today = ctx.now().slice(0, 10);
 
       const createdAt = sql`(select min(occurred_at) from activity_entries ae where ae.target_type = 'issue' and ae.target_id = issues.id and ae.action = 'created')`;
@@ -397,52 +399,38 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         q = q.where((eb: any) => eb.exists(eb.selectFrom("issue_parents").select("id").whereRef("issue_parents.child_issue_id", "=", "issues.id").where("issue_parents.parent_issue_id", "=", f.parentIssueId)));
       }
 
-      if (f.createdAfter) q = q.where(sql<boolean>`${createdAt} >= ${f.createdAfter}`);
-      if (f.createdBefore) q = q.where(sql<boolean>`${createdAt} <= ${f.createdBefore}`);
-      if (f.updatedAfter) q = q.where(sql<boolean>`${updatedAt} >= ${f.updatedAfter}`);
-      if (f.updatedBefore) q = q.where(sql<boolean>`${updatedAt} <= ${f.updatedBefore}`);
+      if (f.createdAfter) q = q.where(onOrAfter(createdAt, f.createdAfter));
+      if (f.createdBefore) q = q.where(onOrBefore(createdAt, f.createdBefore));
+      if (f.updatedAfter) q = q.where(onOrAfter(updatedAt, f.updatedAfter));
+      if (f.updatedBefore) q = q.where(onOrBefore(updatedAt, f.updatedBefore));
       if (f.dueDateFrom) q = q.where("issue_schedules.due_date", ">=", f.dueDateFrom);
       if (f.dueDateTo) q = q.where("issue_schedules.due_date", "<=", f.dueDateTo);
       if (f.hasNoDueDate) q = q.where("issue_schedules.due_date", "is", null);
       if (f.isOverdue) {
         q = q.where(sql<boolean>`issue_schedules.due_date is not null and issue_schedules.due_date < ${today} and (select category from statuses where statuses.id = issues.status_id) != 'done'`);
       }
-      if (f.query) q = q.where("issues.subject", "like", `%${f.query}%`);
+      if (f.query) q = q.where(contains(sql.ref("issues.subject"), f.query));
+      if (f.customField) q = q.where(hasCustomField(f.customField));
 
       q = q.where(await issueVisible(ctx, args.actorId));
 
-      // Sort expression (text-comparable; numbers zero-irrelevant since we keep a
-      // numeric path), with a stable id tiebreak. dueDate nulls sort last.
-      const numeric = !args.sortBy || args.sortBy === "number";
-      const sortExpr = numeric
-        ? sql`issues.number`
-        : args.sortBy === "subject"
-          ? sql`issues.subject`
-          : args.sortBy === "createdAt"
-            ? createdAt
-            : args.sortBy === "updatedAt"
-              ? updatedAt
-              : sql`coalesce(issue_schedules.due_date, '9999-99-99')`;
-
-      if (cursor) {
-        const sep = cursor.indexOf(" ");
-        const cv = cursor.slice(0, sep);
-        const ci = cursor.slice(sep + 1);
-        const val = numeric ? Number(cv) : cv;
-        q = dir === "asc"
-          ? q.where(sql<boolean>`(${sortExpr} > ${val}) or (${sortExpr} = ${val} and issues.id > ${ci})`)
-          : q.where(sql<boolean>`(${sortExpr} < ${val}) or (${sortExpr} = ${val} and issues.id < ${ci})`);
-      }
-
-      const rows: Record<string, unknown>[] = await q
-        .select(sortExpr.as("sortkey"))
-        .orderBy(sortExpr, dir)
-        .orderBy("issues.id", dir)
-        .limit(limit + 1)
-        .execute();
-
-      const hasMore = rows.length > limit;
-      const pageRows = rows.slice(0, limit);
+      const ref = (column: string) => ({ by: sql.ref(column), dir });
+      const ranked = (table: string, column: string) => ({ by: sql`(select t.sort_order from ${sql.table(table)} t where t.id = ${sql.ref(column)})`, dir });
+      const by = args.sortBy ?? "number";
+      const keys = {
+        number: [ref("issues.number")],
+        subject: [text("issues.subject", dir)],
+        createdAt: nullsLast(createdAt, dir),
+        updatedAt: nullsLast(updatedAt, dir),
+        dueDate: nullsLast(sql.ref("issue_schedules.due_date"), dir),
+        // Configured order, as these are lists someone put in order.
+        priority: [ranked("priorities", "issues.priority_id")],
+        status: [ranked("statuses", "issues.status_id")],
+        issueType: [ranked("issue_types", "issues.issue_type_id")],
+        // An issue with several assignees sorts under the first by name.
+        assignee: nullsLast(sql`(select min(lower(u.display_name)) from issue_assignees ia join users u on u.id = ia.assignee_id where ia.issue_id = issues.id)`, dir),
+      }[by];
+      const { items: pageRows, nextCursor } = await listPage(q, { name: `issues ${by}`, keys }, "issues.id", args.pagination);
       const pageIds = pageRows.map((r) => String(r.id));
       const items: Record<string, unknown>[] = pageRows.map((r) => ({ ...issueCodec.decode(r) }));
       const byId = new Map(items.map((i) => [i.id as string, i]));
@@ -515,10 +503,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         }
       }
 
-      const last = pageRows[pageRows.length - 1];
-      const nextCursor = hasMore && last
-        ? Buffer.from(`${String(last.sortkey)} ${String(last.id)}`, "utf8").toString("base64url")
-        : undefined;
       return { items: items as never, nextCursor };
     },
   };

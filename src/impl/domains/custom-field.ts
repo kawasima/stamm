@@ -10,7 +10,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError, ValidationError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { arrayPage } from "../listing.js";
 import { inTransaction } from "../tx.js";
 import { assertCanReadProject, assertGlobalAdmin, canReadProject, isGlobalAdmin } from "../permissions.js";
 
@@ -227,15 +227,11 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
       if (args.projectId) await assertCanReadProject(ctx, args.projectId, args.actorId);
       const see = await viewer(args.actorId);
       const seen = await Promise.all((await loadDefs(db)).map(see));
-      let defs = seen.filter((d) => d !== undefined).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      let defs = seen.filter((d) => d !== undefined);
       if (args.fieldType) defs = defs.filter((d) => d.fieldType === args.fieldType);
       if (typeof args.projectId === "string") defs = defs.filter((d) => inScope(d.scope.projectIds, args.projectId as string));
       if (typeof args.issueTypeId === "string") defs = defs.filter((d) => inScope(d.scope.issueTypeIds, args.issueTypeId as string));
-      const limit = args.pagination?.limit ?? 20;
-      const cursor = decodeCursor(args.pagination?.cursor);
-      const after = cursor ? defs.filter((d) => d.id > cursor) : defs;
-      const page = buildPage(after.slice(0, limit + 1), (d) => d.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      return arrayPage(defs, "custom fields", (d) => [d.sortOrder, d.id], args.pagination);
     },
   };
 }

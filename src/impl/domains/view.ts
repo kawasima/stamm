@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { ProjectView, IssueBoardPosition } from "../../schema/index.js";
 import type { ProjectView as ProjectViewT, IssueBoardPosition as IssueBoardPositionT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
@@ -5,8 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
-import { buildPage, decodeCursor } from "../pagination.js";
-import { inTransaction } from "../tx.js";
+import { listPage } from "../listing.js";
 
 type ViewMethods =
   | "createProjectView" | "getProjectView" | "updateProjectView" | "deleteProjectView"
@@ -74,8 +74,6 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
 
     listProjectViews: async ({ actorId, projectId, visibility, layout, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("project_views").selectAll().where("project_id", "=", projectId);
       if (layout) q = q.where("layout", "=", layout);
       // Accessible to the viewer: shared (public) views plus the actor's own
@@ -83,10 +81,8 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
       // never widen it to another user's private views.
       q = q.where((eb) => eb.or([eb("visibility", "=", "public"), eb("owner_id", "=", actorId)]));
       if (visibility) q = q.where("visibility", "=", visibility);
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (v) => v.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: "views", keys: [{ by: sql.ref("sort_order"), dir: "asc" }] }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     moveIssueOnBoard: async ({ actorId, viewId, issueId, beforeIssueId, afterIssueId, position }) => {

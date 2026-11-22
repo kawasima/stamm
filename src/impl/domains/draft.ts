@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { DraftIssue, DraftConversion } from "../../schema/index.js";
 import type { DraftIssue as DraftIssueT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
@@ -5,7 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage } from "../listing.js";
 import { appendActivity } from "../timeline.js";
 import { issueBehaviors } from "./issue.js";
 
@@ -66,13 +67,9 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
 
     listDraftIssues: async ({ actorId, projectId, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("draft_issues").selectAll().where("project_id", "=", projectId);
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (d) => d.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: "drafts", keys: [{ by: sql.ref("sort_order"), dir: "asc" }] }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     convertDraftToIssue: async ({ draftId, issueTypeId, priorityId, statusId, actorId }) => {

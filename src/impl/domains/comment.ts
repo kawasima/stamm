@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { Comment } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
@@ -7,7 +8,7 @@ import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent, notifyMentions, resolveMentionRecipients } from "../notifications.js";
 import { assertCanWrite, canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
 import { assertCanReadIssue } from "../issue-visibility.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage } from "../listing.js";
 import { inTransaction } from "../tx.js";
 
 type CommentMethods = "createComment" | "getComment" | "updateComment" | "deleteComment" | "listComments";
@@ -108,9 +109,6 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
 
     listComments: async ({ actorId, issueId, sortDirection, pagination }) => {
       await assertCanReadIssue(ctx, issueId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const dir: "asc" | "desc" = sortDirection === "desc" ? "desc" : "asc";
-      const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("comments").selectAll().where("issue_id", "=", issueId);
       // Members-only: a non-member who can read the issue still sees only public
       // comments (plus their own). Members and global admins see everything.
@@ -118,17 +116,8 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       if (!(await canSeePrivateInProject(ctx, projectId, actorId))) {
         q = q.where((eb) => eb.or([eb("visibility", "=", "public"), eb("author_id", "=", actorId)]));
       }
-      if (cursor) {
-        const sep = cursor.indexOf(" ");
-        const co = cursor.slice(0, sep);
-        const ci = cursor.slice(sep + 1);
-        q = dir === "asc"
-          ? q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]))
-          : q.where((eb) => eb.or([eb("occurred_at", "<", co), eb.and([eb("occurred_at", "=", co), eb("id", "<", ci)])]));
-      }
-      const rows = await q.orderBy("occurred_at", dir).orderBy("id", dir).limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (c) => `${c.occurredAt} ${c.id}`, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: "comments", keys: [{ by: sql.ref("occurred_at"), dir: sortDirection ?? "asc" }] }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
   };
 }

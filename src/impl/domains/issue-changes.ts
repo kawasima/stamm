@@ -3,7 +3,7 @@ import { IssueChangeKind, IssueEstimationChange, IssueScheduleChange, IssueStatu
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { makeCodec, type RowCodec } from "../db/codec.js";
-import { buildPage, decodeCursor, type Page } from "../pagination.js";
+import { listPage, type Page } from "../listing.js";
 import { assertCanReadProject } from "../permissions.js";
 import { assertCanReadIssueEvents, issueEventsVisible, issueInProject } from "../issue-visibility.js";
 
@@ -34,23 +34,16 @@ export function issueChangeBehaviors(ctx: Ctx): Pick<Behaviors, Methods> {
     schedule: makeCodec(IssueScheduleChange),
     estimation: makeCodec(IssueEstimationChange),
   };
-  const keyOf = (k: Key): string => `${k.occurred_at}|${k.seq}|${k.id}`;
 
   /** A page of the Events matching `where`, as keys in order, then filled in by kind. */
   const list = async (kinds: IssueChangeKind[], where: RawBuilder<boolean>, pagination: Paging): Promise<Page<{ kind: IssueChangeKind; event: unknown }>> => {
-    const limit = pagination?.limit ?? 20;
-    const cursor = decodeCursor(pagination?.cursor);
-    let after = sql<boolean>`1 = 1`;
-    if (cursor) {
-      const [at, seq, id] = cursor.split("|") as [string, string, string];
-      after = sql<boolean>`(occurred_at > ${at} or (occurred_at = ${at} and (seq > ${Number(seq)} or (seq = ${Number(seq)} and id > ${id}))))`;
-    }
     const each = kinds.map((k) => sql`select id, issue_id, occurred_at, seq, ${sql.lit(k)} as kind from ${sql.table(TABLE[k])}`);
-    const { rows } = await sql<Key>`
-      select id, kind, occurred_at, seq from (${sql.join(each, sql` union all `)}) as e
-      where ${where} and ${after}
-      order by occurred_at, seq, id limit ${limit + 1}`.execute(db);
-    const page = buildPage(rows, keyOf, limit);
+    const all = sql<Key>`(${sql.join(each, sql` union all `)})`.as("e");
+    const page = await listPage(
+      db.selectFrom(all).select(["e.id", "e.kind"]).where(where),
+      { name: "changes", keys: [{ by: sql.ref("e.occurred_at"), dir: "asc" }, { by: sql.ref("e.seq"), dir: "asc" }] },
+      "e.id", pagination,
+    ) as Page<Pick<Key, "id" | "kind">>;
 
     const events = new Map<string, unknown>();
     for (const kind of kinds) {
@@ -68,7 +61,7 @@ export function issueChangeBehaviors(ctx: Ctx): Pick<Behaviors, Methods> {
 
   const ofIssue = async (kind: IssueChangeKind, args: { actorId: string; issueId: string; pagination?: Paging }) => {
     await assertCanReadIssueEvents(ctx, args.issueId, args.actorId);
-    const page = await list([kind], sql<boolean>`issue_id = ${args.issueId}`, args.pagination);
+    const page = await list([kind], sql<boolean>`e.issue_id = ${args.issueId}`, args.pagination);
     return { items: page.items.map((i) => i.event) as never, nextCursor: page.nextCursor };
   };
 
@@ -80,8 +73,8 @@ export function issueChangeBehaviors(ctx: Ctx): Pick<Behaviors, Methods> {
       await assertCanReadProject(ctx, projectId, actorId);
       const issueId = sql.ref("e.issue_id");
       let where = sql<boolean>`${issueInProject(issueId, projectId)} and ${await issueEventsVisible(ctx, actorId, issueId)}`;
-      if (occurredFrom) where = sql<boolean>`${where} and occurred_at >= ${instant(occurredFrom)}`;
-      if (occurredUntil) where = sql<boolean>`${where} and occurred_at < ${instant(occurredUntil)}`;
+      if (occurredFrom) where = sql<boolean>`${where} and e.occurred_at >= ${instant(occurredFrom)}`;
+      if (occurredUntil) where = sql<boolean>`${where} and e.occurred_at < ${instant(occurredUntil)}`;
       const page = await list([...new Set(kinds ?? IssueChangeKind.options)], where, pagination);
       return { items: page.items.map((i) => ({ kind: i.kind, ...(i.event as object) }) as IssueChange), nextCursor: page.nextCursor };
     },

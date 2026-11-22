@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { IssueTemplate } from "../../schema/index.js";
 import type { IssueTemplate as IssueTemplateT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
@@ -5,7 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanReadProject, assertCanWrite, canReadProject } from "../permissions.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage } from "../listing.js";
 
 type TemplateMethods =
   | "createIssueTemplate" | "getIssueTemplate" | "updateIssueTemplate" | "deleteIssueTemplate"
@@ -67,14 +68,10 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
 
     listIssueTemplates: async ({ actorId, projectId, issueTypeId, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_templates").selectAll().where("project_id", "=", projectId);
       if (issueTypeId) q = q.where("issue_type_id", "=", issueTypeId);
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (t) => t.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: "templates", keys: [{ by: sql.ref("sort_order"), dir: "asc" }] }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     instantiateTemplate: async ({ actorId, templateId, subject }) => {

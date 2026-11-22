@@ -8,7 +8,7 @@ import { assertInProject } from "../references.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
 import { assertCanReadIssue } from "../issue-visibility.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage } from "../listing.js";
 
 type TimeMethods = "createTimeEntry" | "getTimeEntry" | "updateTimeEntry" | "deleteTimeEntry" | "listTimeEntries" | "getTimeSummary";
 
@@ -68,9 +68,6 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       }
       const ownOnly = !isAdmin && !args.projectId && !args.issueId;
       const effectiveUserId = ownOnly ? args.actorId : args.userId;
-      const limit = args.pagination?.limit ?? 20;
-      const dir: "asc" | "desc" = args.sortDirection === "desc" ? "desc" : "asc";
-      const cursor = decodeCursor(args.pagination?.cursor);
       let q = db.selectFrom("time_entries").selectAll();
       if (args.projectId) q = q.where("project_id", "=", args.projectId);
       if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
@@ -80,21 +77,10 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
       if (args.spentOnFrom) q = q.where("spent_on", ">=", args.spentOnFrom);
       if (args.spentOnTo) q = q.where("spent_on", "<=", args.spentOnTo);
 
-      const numeric = args.sortBy === "hours";
-      const col = args.sortBy === "hours" ? "hours" : args.sortBy === "occurredAt" ? "occurred_at" : "spent_on";
-      if (cursor) {
-        const sep = cursor.indexOf(" ");
-        const cv = cursor.slice(0, sep);
-        const ci = cursor.slice(sep + 1);
-        const v: unknown = numeric ? Number(cv) : cv;
-        q = dir === "asc"
-          ? q.where(sql<boolean>`(${sql.ref(col)} > ${v}) or (${sql.ref(col)} = ${v} and id > ${ci})`)
-          : q.where(sql<boolean>`(${sql.ref(col)} < ${v}) or (${sql.ref(col)} = ${v} and id < ${ci})`);
-      }
-      const rows = await q.orderBy(col as never, dir).orderBy("id", dir).limit(limit + 1).execute();
-      const keyOf = (e: TimeEntryT) => `${args.sortBy === "hours" ? e.hours : args.sortBy === "occurredAt" ? e.occurredAt : e.spentOn} ${e.id}`;
-      const page = buildPage(rows.map((r) => codec.decode(r)), keyOf, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const by = args.sortBy ?? "spentOn";
+      const column = { hours: "hours", occurredAt: "occurred_at", spentOn: "spent_on" }[by];
+      const page = await listPage(q, { name: `time ${by}`, keys: [{ by: sql.ref(column), dir: args.sortDirection ?? "asc" }] }, "id", args.pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     getTimeSummary: async (args) => {

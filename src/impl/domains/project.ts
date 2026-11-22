@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import {
   Project,
   ProjectCategory,
@@ -8,7 +9,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { contains, listPage, text } from "../listing.js";
 import { assertGlobalAdmin, assertCanReadProject, canReadProject, isGlobalAdmin } from "../permissions.js";
 import { assertNoCycle } from "../references.js";
 import { inTransaction } from "../tx.js";
@@ -120,8 +121,6 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
     },
 
     listProjects: async (args) => {
-      const limit = args.pagination?.limit ?? 20;
-      const cursor = decodeCursor(args.pagination?.cursor);
       // project_categories is 1:1 with projects, so an inner join is safe and
       // lets visibility/lifecycle filter without correlated-subquery typing pain.
       let q = db
@@ -142,8 +141,7 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
           .where("project_memberships.user_id", "=", args.memberUserId);
       }
       if (args.query) {
-        const like = `%${args.query}%`;
-        q = q.where((eb) => eb.or([eb("projects.name", "like", like), eb("projects.identifier", "like", like)]));
+        q = q.where(sql<boolean>`(${contains(sql.ref("projects.name"), args.query)} or ${contains(sql.ref("projects.identifier"), args.query)})`);
       }
       if (ctx.scope?.projectIds) q = q.where("projects.id", "in", ctx.scope.projectIds);
       // Visibility scoping: non-admins see only public projects and those they
@@ -162,11 +160,9 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
           ]),
         );
       }
-      if (cursor) q = q.where("projects.id", ">", cursor);
-
-      const rows = await q.orderBy("projects.id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => projectCodec.decode(r)), (p) => p.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const by = args.sortBy ?? "identifier";
+      const page = await listPage(q, { name: `projects ${by}`, keys: [text(`projects.${by}`, args.sortDirection ?? "asc")] }, "projects.id", args.pagination);
+      return { items: page.items.map((r) => projectCodec.decode(r)), nextCursor: page.nextCursor };
     },
 
     archiveProject: async ({ actorId, projectId }) => {
@@ -224,17 +220,13 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
 
     listProjectMembers: async ({ actorId, projectId, roleId, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("project_memberships").selectAll().where("project_id", "=", projectId);
       if (roleId) {
         q = q.where(({ exists, selectFrom }) =>
           exists(selectFrom("project_membership_roles").select("id").whereRef("project_membership_roles.membership_id", "=", "project_memberships.id").where("project_membership_roles.role_id", "=", roleId)),
         );
       }
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows, (r) => r.id, limit);
+      const page = await listPage(q, { name: "members", keys: [] }, "id", pagination) as { items: { id: string; project_id: string; user_id: string }[]; nextCursor?: string };
       // batch role rows for the page (no N+1)
       const ids = page.items.map((r) => r.id);
       const roleRows = ids.length

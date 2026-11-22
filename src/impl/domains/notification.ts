@@ -1,9 +1,10 @@
+import { sql } from "kysely";
 import { Notification, NotificationRead } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage } from "../listing.js";
 import { isGlobalAdmin, scopeAllowsProject } from "../permissions.js";
 
 type NotificationMethods = "listNotifications" | "getUnreadNotificationCount" | "markNotificationRead" | "markAllNotificationsRead";
@@ -26,8 +27,6 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
     listNotifications: async ({ actorId, recipientId: target, projectId, eventType, isRead, pagination }) => {
       const recipientId = target ?? actorId;
       await assertOwnInbox(actorId, recipientId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("notifications").selectAll().where("recipient_id", "=", recipientId);
       if (ctx.scope?.projectIds) q = q.where("project_id", "in", ctx.scope.projectIds);
       if (projectId) q = q.where("project_id", "=", projectId);
@@ -38,10 +37,8 @@ export function notificationBehaviors(ctx: Ctx): Pick<Behaviors, NotificationMet
           return isRead ? hasRead : not(hasRead);
         });
       }
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (n) => n.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: "notifications", keys: [{ by: sql.ref("occurred_at"), dir: "desc" }] }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     getUnreadNotificationCount: async ({ actorId, recipientId: target }) => {

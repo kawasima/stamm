@@ -14,7 +14,6 @@ export const CreateCategory = z.function()
     actorId: Id,
     projectId: Id,
     name: z.string().min(1).max(100),
-    defaultAssigneeId: Id.optional(),
   }))
   .returns(z.promise(Category));
 

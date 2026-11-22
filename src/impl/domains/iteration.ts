@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { Iteration } from "../../schema/index.js";
 import type { Iteration as IterationT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
@@ -5,8 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
-import { buildPage, decodeCursor } from "../pagination.js";
-import { inTransaction } from "../tx.js";
+import { listPage, nullsLast, text } from "../listing.js";
 
 type IterationMethods =
   | "createIteration" | "getIteration" | "updateIteration" | "deleteIteration" | "listIterations" | "getIterationProgress";
@@ -53,15 +53,13 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
       await db.deleteFrom("iterations").where("id", "=", iterationId).execute();
     },
 
-    listIterations: async ({ actorId, projectId, pagination }) => {
+    listIterations: async ({ actorId, projectId, sortBy, sortDirection, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
-      let q = db.selectFrom("iterations").selectAll().where("project_id", "=", projectId);
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (i) => i.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const dir = sortDirection ?? "asc";
+      const by = sortBy ?? "sortOrder";
+      const keys = { name: [text("name", dir)], startDate: nullsLast(sql.ref("start_date"), dir), sortOrder: [{ by: sql.ref("sort_order"), dir }] }[by];
+      const page = await listPage(db.selectFrom("iterations").selectAll().where("project_id", "=", projectId), { name: `iterations ${by}`, keys }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     getIterationProgress: async ({ actorId, iterationId }) => {

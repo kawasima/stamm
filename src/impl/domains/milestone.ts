@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { Milestone } from "../../schema/index.js";
 import type { Milestone as MilestoneT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
@@ -5,8 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
-import { buildPage, decodeCursor } from "../pagination.js";
-import { inTransaction } from "../tx.js";
+import { listPage, nullsLast, text } from "../listing.js";
 
 type MilestoneMethods =
   | "createMilestone" | "getMilestone" | "updateMilestone" | "deleteMilestone" | "listMilestones"
@@ -59,16 +59,15 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
       await db.deleteFrom("milestones").where("id", "=", milestoneId).execute();
     },
 
-    listMilestones: async ({ actorId, projectId, status, pagination }) => {
+    listMilestones: async ({ actorId, projectId, status, sortBy, sortDirection, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
+      const dir = sortDirection ?? "asc";
+      const by = sortBy ?? "sortOrder";
+      const keys = { name: [text("name", dir)], dueDate: nullsLast(sql.ref("due_date"), dir), sortOrder: [{ by: sql.ref("sort_order"), dir }] }[by];
       let q = db.selectFrom("milestones").selectAll().where("project_id", "=", projectId);
       if (status) q = q.where("status", "=", status);
-      if (cursor) q = q.where("id", ">", cursor);
-      const rows = await q.orderBy("id").limit(limit + 1).execute();
-      const page = buildPage(rows.map((r) => codec.decode(r)), (m) => m.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const page = await listPage(q, { name: `milestones ${by}`, keys }, "id", pagination);
+      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
     },
 
     closeMilestone: async ({ actorId, milestoneId, releaseDate }) => {

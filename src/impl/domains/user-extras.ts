@@ -4,7 +4,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertGlobalAdmin, assertNotLastAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
-import { buildPage, decodeCursor } from "../pagination.js";
+import { listPage, text } from "../listing.js";
 
 type UserExtraMethods = "setUserStatus" | "getUserStatus" | "addGroupMember" | "removeGroupMember" | "listGroupMembers";
 
@@ -54,21 +54,17 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
 
     listGroupMembers: async ({ actorId, groupId, pagination }) => {
       assertWorkspaceReader();
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
-      let q = db
+      const q = db
         .selectFrom("group_memberships as gm")
         .innerJoin("users as u", "u.id", "gm.user_id")
         .selectAll("u")
         .where("gm.group_id", "=", groupId);
-      if (cursor) q = q.where("u.id", ">", cursor);
-      const rows = await q.orderBy("u.id").limit(limit + 1).execute();
+      const page = await listPage(q, { name: "group members", keys: [text("u.login", "asc")] }, "u.id", pagination);
       // Members carry email PII; drop it for any reader who is not a global admin
       // (and not themselves), mirroring the user directory read projection.
       const viewerIsAdmin = await isGlobalAdmin(ctx, actorId);
-      const items = rows.map((r) => projectUser(userCodec.decode(r), actorId, viewerIsAdmin));
-      const page = buildPage(items, (u) => u.id, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
+      const items = page.items.map((r) => projectUser(userCodec.decode(r), actorId, viewerIsAdmin));
+      return { items, nextCursor: page.nextCursor };
     },
   };
 }

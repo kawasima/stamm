@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { NotFoundError, ConflictError, ForbiddenError } from "../errors.js";
+import { NotFoundError, ForbiddenError } from "../errors.js";
 import { createTestDb, seedAdmin } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { customFieldBehaviors } from "./custom-field.js";

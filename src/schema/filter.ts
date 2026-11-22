@@ -37,6 +37,7 @@ export const IssueFilter = z.object({
   //   created* -> ActivityEntry(action="created").occurredAt
   //   updated* -> the latest ActivityEntry.occurredAt
   // both scoped by targetType="issue" AND targetId=issue.id.
+  // Bounds are whole days in UTC, both ends included.
   createdAfter: DateString.optional(),
   createdBefore: DateString.optional(),
   updatedAfter: DateString.optional(),
