@@ -80,6 +80,7 @@ describe("issue custom field validation (Schema on Write — ADR-0003)", () => {
 
   it("rejects a value for a field out of scope for the issue type", async () => {
     const w = await world();
+    await w.db.insertInto("issue_types").values({ id: "other-type", name: "o", kind: "standard", sort_order: 0 }).execute();
     const f = await w.cf.createCustomFieldDefinition({ actorId: w.admin.id, name: "Scoped", fieldType: "string", constraints: {}, scope: { issueTypeIds: ["other-type"] } });
     await expect(w.create([{ fieldId: f.id, value: "x" }])).rejects.toBeInstanceOf(ValidationError);
     await w.db.destroy();

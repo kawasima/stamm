@@ -116,6 +116,8 @@ export async function hasPermission(ctx: Ctx, projectId: string, userId: string,
 /** Gate a project-scoped write. Global admins bypass; otherwise a role must grant `perm`. */
 export async function assertCanWrite(ctx: Ctx, projectId: string, userId: string, perm: Permission): Promise<void> {
   if (!(await hasPermission(ctx, projectId, userId, perm))) {
+    // A project the user can't read is missing, whatever they try to do in it.
+    await assertCanReadProject(ctx, projectId, userId);
     throw new ForbiddenError(`User ${userId} lacks permission '${perm}' in project ${projectId}`);
   }
 }

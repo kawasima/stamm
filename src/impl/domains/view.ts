@@ -3,10 +3,10 @@ import { ProjectView, IssueBoardPosition } from "../../schema/index.js";
 import type { ProjectView as ProjectViewT, IssueBoardPosition as IssueBoardPositionT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { ConflictError, NotFoundError } from "../errors.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
-import { issueVisible } from "../issue-visibility.js";
+import { asMissing, issueVisible } from "../issue-visibility.js";
 import { listPage } from "../listing.js";
 
 type ViewMethods =
@@ -34,7 +34,7 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
   /** A view is readable when the actor can read its project, and — for a private
    *  view — only by its owner (or a global admin). Throws NotFound otherwise. */
   const assertCanReadView = async (view: ProjectViewT, actorId: string): Promise<void> => {
-    await assertCanReadProject(ctx, view.projectId, actorId);
+    await asMissing("ProjectView", view.id, () => assertCanReadProject(ctx, view.projectId, actorId));
     if (view.visibility === "private" && view.ownerId !== actorId && !(await isGlobalAdmin(ctx, actorId))) {
       throw new NotFoundError("ProjectView", view.id);
     }
@@ -43,8 +43,10 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
   return {
     createProjectView: async (args) => {
       await assertCanWrite(ctx, args.projectId, args.actorId, "view.manage");
-      const { actorId: _a, ...fields } = args;
-      const view = ProjectView.parse({ id: ctx.genId(), ...fields });
+      const { actorId, ownerId = actorId, ...fields } = args;
+      // A private view is its owner's; no one else makes one for them.
+      if (ownerId !== actorId && !(await isGlobalAdmin(ctx, actorId))) throw new ForbiddenError("Only a global admin may create a view for someone else");
+      const view = ProjectView.parse({ id: ctx.genId(), ownerId, ...fields });
       await db.insertInto("project_views").values(codec.encode(view) as never).execute();
       return view;
     },
@@ -57,6 +59,7 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
 
     updateProjectView: async (args) => {
       const view = await load(args.viewId);
+      await assertCanReadView(view, args.actorId);
       await assertCanWrite(ctx, view.projectId, args.actorId, "view.manage");
       const patch: Record<string, unknown> = {};
       for (const f of ["name", "layout", "filter", "groupBy", "sortBy", "sortDirection", "columns", "visibility", "sortOrder"] as const) {
@@ -69,6 +72,7 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
 
     deleteProjectView: async ({ actorId, viewId }) => {
       const view = await load(viewId);
+      await assertCanReadView(view, actorId);
       await assertCanWrite(ctx, view.projectId, actorId, "view.manage");
       await db.deleteFrom("project_views").where("id", "=", viewId).execute();
     },
@@ -88,10 +92,9 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
 
     moveIssueOnBoard: async ({ actorId, viewId, issueId, beforeIssueId, afterIssueId, position }) => {
       const view = await load(viewId);
-      await assertCanWrite(ctx, view.projectId, actorId, "view.manage");
-      // Reordering someone's private view needs the same access as reading it, and
-      // the card must be an issue of this view's project, not an arbitrary id.
       await assertCanReadView(view, actorId);
+      await assertCanWrite(ctx, view.projectId, actorId, "view.manage");
+      // The card must be an issue of this view's project, not an arbitrary id.
       const card = await db.selectFrom("issues").select("project_id").where("id", "=", issueId).where(await issueVisible(ctx, actorId)).executeTakeFirst();
       if (!card || card.project_id !== view.projectId) throw new NotFoundError("Issue", issueId);
 

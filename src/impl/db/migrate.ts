@@ -15,6 +15,7 @@ import * as userLoginUnique0012 from "./migrations/0012_user_login_unique.js";
 import * as projectCoc0013 from "./migrations/0013_project_code_of_conduct.js";
 import * as completeHistory0014 from "./migrations/0014_complete_issue_history.js";
 import * as foreignKeys0015 from "./migrations/0015_foreign_keys.js";
+import * as idLists0016 from "./migrations/0016_id_lists.js";
 
 /** All migrations in order, keyed by a sortable name. */
 const MIGRATIONS: Record<string, Migration> = {
@@ -33,6 +34,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "0013_project_code_of_conduct": projectCoc0013,
   "0014_complete_issue_history": completeHistory0014,
   "0015_foreign_keys": foreignKeys0015,
+  "0016_id_lists": idLists0016,
 };
 
 class StaticMigrationProvider implements MigrationProvider {

@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import {
   CustomFieldDefinition,
   type CustomFieldDefinition as CustomFieldDefinitionT,
@@ -11,11 +11,12 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError, ValidationError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { arrayPage } from "../listing.js";
+import { FIELD_ISSUE_TYPES, FIELD_PROJECTS, readLists, writeList } from "../id-lists.js";
 import { inTransaction } from "../tx.js";
 import { assertCanReadProject, assertGlobalAdmin, canReadProject, isGlobalAdmin } from "../permissions.js";
 
 const codecOpts = {
-  json: ["possibleValues", "constraints", "scope"],
+  json: ["possibleValues", "constraints"],
   bool: ["isRequired", "isFilter", "isSearchable"],
 };
 const defCodec = makeCodec(CustomFieldDefinition, codecOpts);
@@ -24,8 +25,38 @@ const TABLE = "custom_field_definitions";
 /** A scope list (projectIds / issueTypeIds) matches when empty/absent (= all) or it contains the id. */
 const inScope = (ids: string[] | undefined, id: string): boolean => !ids || ids.length === 0 || ids.includes(id);
 
-const loadDefs = async (db: Kysely<any>): Promise<CustomFieldDefinitionT[]> =>
-  (await db.selectFrom(TABLE).selectAll().execute()).map((r: Record<string, unknown>) => defCodec.decode(r));
+/** Definitions with where they apply, all or one. */
+const loadDefs = async (db: Kysely<any>, id?: string): Promise<CustomFieldDefinitionT[]> => {
+  let q = db.selectFrom(TABLE).selectAll();
+  if (id !== undefined) q = q.where("id", "=", id);
+  const rows = (await q.execute()) as { id: string }[];
+  const ids = rows.map((r) => r.id);
+  const projects = await readLists(db, FIELD_PROJECTS, ids);
+  const types = await readLists(db, FIELD_ISSUE_TYPES, ids);
+  return rows.map((r) => defCodec.decode({
+    ...r,
+    scope: { ...(projects.has(r.id) ? { projectIds: projects.get(r.id) } : {}), ...(types.has(r.id) ? { issueTypeIds: types.get(r.id) } : {}) },
+  }));
+};
+
+const rowOf = (def: CustomFieldDefinitionT): Record<string, unknown> => {
+  const { scope: _scope, ...row } = defCodec.encode(def);
+  return row;
+};
+
+const writeScope = async (ctx: Ctx, db: Kysely<any>, def: CustomFieldDefinitionT): Promise<void> => {
+  await writeList(ctx, db, FIELD_PROJECTS, def.id, def.scope.projectIds);
+  await writeList(ctx, db, FIELD_ISSUE_TYPES, def.id, def.scope.issueTypeIds);
+};
+
+/** An issue holds this user or version as a field value. Values are JSON, so no key guards them. */
+export async function assertNotHeldAsValue(db: Ctx["db"], fieldType: "user" | "version", id: string): Promise<void> {
+  const { rows } = await sql`
+    select 1 from issues i, json_each(i.custom_fields) f
+    join custom_field_definitions d on d.id = json_extract(f.value, '$.fieldId') and d.field_type = ${fieldType}
+    where json_extract(f.value, '$.value') = ${id} limit 1`.execute(db);
+  if (rows.length > 0) throw new ConflictError("It is in use as a custom field value and cannot be deleted");
+}
 
 /** Is any issue holding a value for this field? (values live in issues.custom_fields JSON). */
 const fieldInUse = async (db: Kysely<any>, fieldId: string): Promise<boolean> => {
@@ -42,7 +73,7 @@ const fail = (def: CustomFieldDefinitionT, msg: string): never => {
 };
 
 /** Validate one value against its definition's type and constraints. */
-async function validateValue(ctx: Ctx, def: CustomFieldDefinitionT, value: CustomFieldValue["value"]): Promise<void> {
+async function validateValue(ctx: Ctx, def: CustomFieldDefinitionT, value: CustomFieldValue["value"], projectId: string): Promise<void> {
   const db = ctx.db as unknown as Kysely<any>;
   const c = def.constraints;
   const checkStr = (s: string) => {
@@ -106,7 +137,7 @@ async function validateValue(ctx: Ctx, def: CustomFieldDefinitionT, value: Custo
     }
     case "version": {
       if (typeof value !== "string") fail(def, "expected a version (milestone) id");
-      const m = await db.selectFrom("milestones").select("id").where("id", "=", value as string).executeTakeFirst();
+      const m = await db.selectFrom("milestones").select("id").where("id", "=", value as string).where("project_id", "=", projectId).executeTakeFirst();
       if (!m) fail(def, `no such version: ${value}`);
       break;
     }
@@ -143,11 +174,23 @@ export async function validateCustomFields(
           : `Unknown custom field: ${v.fieldId}`,
       );
     }
-    await validateValue(ctx, def, v.value);
+    await validateValue(ctx, def, v.value, args.projectId);
   }
   for (const d of scoped) {
     if (d.isRequired && !seen.has(d.id)) throw new ValidationError(`Custom field "${d.name}" is required`);
   }
+}
+
+/** Of `values`, those an issue of the project (and type, if given) could hold now. */
+export async function applicableValues(ctx: Ctx, projectId: string, issueTypeId: string | undefined, values: CustomFieldValue[]): Promise<CustomFieldValue[]> {
+  const defs = new Map((await loadDefs(ctx.db as unknown as Kysely<any>)).map((d) => [d.id, d]));
+  const out: CustomFieldValue[] = [];
+  for (const v of values) {
+    const def = defs.get(v.fieldId);
+    if (!def || !inScope(def.scope.projectIds, projectId) || (issueTypeId !== undefined && !inScope(def.scope.issueTypeIds, issueTypeId))) continue;
+    if (await validateValue(ctx, def, v.value, projectId).then(() => true, (e) => { if (e instanceof ValidationError) return false; throw e; })) out.push(v);
+  }
+  return out;
 }
 
 /**
@@ -163,7 +206,7 @@ async function assertValuesFit(ctx: Ctx, def: CustomFieldDefinitionT): Promise<v
     const held = (JSON.parse(r.custom_fields) as CustomFieldValue[]).find((v) => v.fieldId === def.id);
     if (!held) continue;
     const applies = inScope(def.scope.projectIds, r.project_id) && inScope(def.scope.issueTypeIds, r.issue_type_id);
-    const valid = applies && (await validateValue(ctx, def, held.value).then(() => true, (e) => { if (e instanceof ValidationError) return false; throw e; }));
+    const valid = applies && (await validateValue(ctx, def, held.value, r.project_id).then(() => true, (e) => { if (e instanceof ValidationError) return false; throw e; }));
     if (!valid) unfit++;
   }
   if (unfit > 0) throw new ConflictError(`${unfit} issues hold a value that this change would make invalid; clear those first`);
@@ -203,22 +246,24 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
       await assertGlobalAdmin(ctx, args.actorId);
       const { actorId: _a, ...fields } = args;
       const def = CustomFieldDefinition.parse({ id: ctx.genId(), ...fields });
-      await db.insertInto(TABLE).values(defCodec.encode(def)).execute();
+      await inTransaction(db, async (trx) => {
+        await trx.insertInto(TABLE).values(rowOf(def)).execute();
+        await writeScope(ctx, trx, def);
+      });
       return def;
     },
 
     getCustomFieldDefinition: async ({ actorId, fieldId }) => {
-      const row = await db.selectFrom(TABLE).selectAll().where("id", "=", fieldId).executeTakeFirst();
-      const def = row && (await (await viewer(actorId))(defCodec.decode(row)));
+      const [found] = await loadDefs(db, fieldId);
+      const def = found && (await (await viewer(actorId))(found));
       if (!def) throw new NotFoundError("CustomFieldDefinition", fieldId);
       return def;
     },
 
     updateCustomFieldDefinition: async (args) => {
       await assertGlobalAdmin(ctx, args.actorId);
-      const row = await db.selectFrom(TABLE).selectAll().where("id", "=", args.fieldId).executeTakeFirst();
-      if (!row) throw new NotFoundError("CustomFieldDefinition", args.fieldId);
-      const current = defCodec.decode(row) as Record<string, unknown>;
+      const [current] = await loadDefs(db, args.fieldId);
+      if (!current) throw new NotFoundError("CustomFieldDefinition", args.fieldId);
       const patch: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(args)) {
         if (k !== "actorId" && k !== "fieldId" && v !== undefined) patch[k] = v;
@@ -226,7 +271,8 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
       const merged = CustomFieldDefinition.parse({ ...current, ...patch, id: args.fieldId });
       await inTransaction(db, async (trx) => {
         await assertValuesFit({ ...ctx, db: trx }, merged);
-        await trx.updateTable(TABLE).set(defCodec.encode(merged)).where("id", "=", args.fieldId).execute();
+        await trx.updateTable(TABLE).set(rowOf(merged)).where("id", "=", args.fieldId).execute();
+        await writeScope(ctx, trx, merged);
       });
       return merged;
     },

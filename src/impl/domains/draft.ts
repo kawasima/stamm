@@ -7,6 +7,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
+import { asMissing } from "../issue-visibility.js";
 import { listPage } from "../listing.js";
 import { appendActivity } from "../timeline.js";
 import { issueBehaviors } from "./issue.js";
@@ -43,13 +44,13 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
 
     getDraftIssue: async ({ actorId, draftId }) => {
       const draft = await load(draftId);
-      await assertCanReadProject(ctx, draft.projectId, actorId);
+      await asMissing("DraftIssue", draft.id, () => assertCanReadProject(ctx, draft.projectId, actorId));
       return draft;
     },
 
     updateDraftIssue: async (args) => {
       const draft = await load(args.draftId);
-      await assertCanWrite(ctx, draft.projectId, args.actorId, "issue.update");
+      await asMissing("DraftIssue", draft.id, () => assertCanWrite(ctx, draft.projectId, args.actorId, "issue.update"));
       const patch: Record<string, unknown> = {};
       for (const f of ["title", "body", "sortOrder"] as const) {
         if ((args as Record<string, unknown>)[f] !== undefined) patch[f] = (args as Record<string, unknown>)[f];
@@ -61,7 +62,7 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
 
     deleteDraftIssue: async ({ actorId, draftId }) => {
       const draft = await load(draftId);
-      await assertCanWrite(ctx, draft.projectId, actorId, "issue.delete");
+      await asMissing("DraftIssue", draft.id, () => assertCanWrite(ctx, draft.projectId, actorId, "issue.delete"));
       await db.deleteFrom("draft_issues").where("id", "=", draftId).execute();
     },
 
@@ -74,6 +75,7 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
 
     convertDraftToIssue: ({ draftId, issueTypeId, priorityId, statusId, actorId }) => inTransaction(db, async (trx) => {
       const draft = await load(draftId, trx);
+      await asMissing("DraftIssue", draftId, () => assertCanWrite({ ...ctx, db: trx }, draft.projectId, actorId, "issue.create"));
       // createIssue asserts issue.create on the draft's project and resolves the
       // default status when statusId is omitted.
       const issue = await issueBehaviors({ ...ctx, db: trx }).createIssue({
@@ -84,6 +86,9 @@ export function draftBehaviors(ctx: Ctx): Pick<Behaviors, DraftMethods> {
       const conversion = DraftConversion.parse({ id: ctx.genId(), draftId, issueId: issue.id, userId: actorId, occurredAt: ctx.now() });
       await trx.insertInto("draft_conversions").values(conversionCodec.encode(conversion) as never).execute();
       await appendActivity(ctx, trx, { projectId: draft.projectId, userId: actorId, action: "draft_converted", targetType: "issue", targetId: issue.id });
+      // It was a draft until now. Its text is the issue's, and the conversion is on record.
+      const gone = await trx.deleteFrom("draft_issues").where("id", "=", draftId).executeTakeFirst();
+      if (Number(gone.numDeletedRows) === 0) throw new NotFoundError("DraftIssue", draftId);
       return { issue, conversion };
     }),
   };

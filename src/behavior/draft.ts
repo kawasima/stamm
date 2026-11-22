@@ -51,7 +51,7 @@ export const ListDraftIssues = z.function()
 
 /**
  * Promote a draft into a real issue. Creates the Issue and records a
- * DraftConversion event linking the draft to the new issue.
+ * DraftConversion event linking the draft to the new issue. The draft is then gone.
  */
 export const ConvertDraftToIssue = z.function()
   .args(z.object({

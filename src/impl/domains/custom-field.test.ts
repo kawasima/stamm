@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NotFoundError, ForbiddenError } from "../errors.js";
-import { createTestDb, seedAdmin } from "../test-db.js";
+import { createTestDb, seedAdmin, seedProject } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { customFieldBehaviors } from "./custom-field.js";
 
@@ -34,6 +34,7 @@ describe("custom field definitions (registry)", () => {
 
   it("round-trips JSON fields (possibleValues, constraints, scope)", async () => {
     const { db, cf } = await setup();
+    await db.insertInto("issue_types").values({ id: "t1", name: "t1", kind: "standard", sort_order: 0 }).execute();
     const def = await cf.createCustomFieldDefinition({
       actorId: "admin", name: "Severity", fieldType: "list",
       possibleValues: ["low", "high"], constraints: {}, scope: { issueTypeIds: ["t1"] },
@@ -46,6 +47,7 @@ describe("custom field definitions (registry)", () => {
 
   it("filters list by scope (projectId) — global fields and in-scope fields match", async () => {
     const { db, cf } = await setup();
+    for (const p of ["p1", "p2"]) await seedProject(db, p);
     const global = await cf.createCustomFieldDefinition({ actorId: "admin", name: "G", fieldType: "string", constraints: {}, scope: {} });
     const scoped = await cf.createCustomFieldDefinition({ actorId: "admin", name: "S", fieldType: "string", constraints: {}, scope: { projectIds: ["p1"] } });
     const other = await cf.createCustomFieldDefinition({ actorId: "admin", name: "O", fieldType: "string", constraints: {}, scope: { projectIds: ["p2"] } });

@@ -30,10 +30,10 @@ describe("issue templates", () => {
     const t = await w.templates.createIssueTemplate({
       actorId: w.alice.id, projectId: w.proj.id, name: "Bug report",
       issueTypeId: w.type.id, titlePrefix: "[BUG] ", descriptionTemplate: "## Steps\n",
-      defaultPriorityId: w.priority.id, defaultLabelIds: ["l1", "l2"], defaultAssigneeIds: ["u1"],
+      defaultPriorityId: w.priority.id, defaultLabelIds: [w.label.id], defaultAssigneeIds: [w.alice.id],
     });
     const got = await w.templates.getIssueTemplate({ actorId: w.alice.id, templateId: t.id });
-    expect(got).toMatchObject({ name: "Bug report", titlePrefix: "[BUG] ", defaultLabelIds: ["l1", "l2"], defaultAssigneeIds: ["u1"] });
+    expect(got).toMatchObject({ name: "Bug report", titlePrefix: "[BUG] ", defaultLabelIds: [w.label.id], defaultAssigneeIds: [w.alice.id] });
 
     const list = await w.templates.listIssueTemplates({ actorId: w.alice.id, projectId: w.proj.id, issueTypeId: w.type.id, pagination: { limit: 20 } });
     expect(list.items.map((x) => x.id)).toContain(t.id);
@@ -45,14 +45,13 @@ describe("issue templates", () => {
     const t = await w.templates.createIssueTemplate({
       actorId: w.alice.id, projectId: w.proj.id, name: "Bug report",
       issueTypeId: w.type.id, titlePrefix: "[BUG] ", descriptionTemplate: "## Steps\n",
-      defaultPriorityId: w.priority.id, defaultLabelIds: [w.label.id, "gone"], defaultAssigneeIds: [w.alice.id, w.bob.id],
+      defaultPriorityId: w.priority.id, defaultLabelIds: [w.label.id], defaultAssigneeIds: [w.alice.id],
     });
 
     const prepared = await w.templates.instantiateTemplate({ actorId: w.alice.id, templateId: t.id, subject: "Login fails" });
     expect(prepared).toMatchObject({
       projectId: w.proj.id, issueTypeId: w.type.id, subject: "[BUG] Login fails",
       description: "## Steps\n", priorityId: w.priority.id,
-      // only what can still be used: not a deleted label, nor someone who is not a member
       labelIds: [w.label.id], assigneeIds: [w.alice.id],
     });
 
@@ -65,8 +64,8 @@ describe("issue templates", () => {
   it("updates and deletes a template", async () => {
     const w = await world();
     const t = await w.templates.createIssueTemplate({ actorId: w.alice.id, projectId: w.proj.id, name: "T", descriptionTemplate: "x" });
-    const up = await w.templates.updateIssueTemplate({ actorId: w.alice.id, templateId: t.id, name: "T2", defaultLabelIds: ["a"] });
-    expect(up).toMatchObject({ name: "T2", defaultLabelIds: ["a"] });
+    const up = await w.templates.updateIssueTemplate({ actorId: w.alice.id, templateId: t.id, name: "T2", defaultLabelIds: [w.label.id] });
+    expect(up).toMatchObject({ name: "T2", defaultLabelIds: [w.label.id] });
     await w.templates.deleteIssueTemplate({ actorId: w.alice.id, templateId: t.id });
     await expect(w.templates.getIssueTemplate({ actorId: w.alice.id, templateId: t.id })).rejects.toThrow();
     await w.db.destroy();

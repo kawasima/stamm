@@ -223,6 +223,7 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
           await trx.deleteFrom("issue_assignees").where("id", "=", a.id).execute();
           await appendActivity(ctx, trx, { projectId, userId: actorId, action: "assigned", targetType: "issue", targetId: a.issueId, occurredAt });
         }
+        await sql`delete from issue_template_assignees where user_id = ${userId} and template_id in (select id from issue_templates where project_id = ${projectId})`.execute(trx);
         await trx.deleteFrom("project_memberships").where("id", "=", row.id).execute();
       });
     },

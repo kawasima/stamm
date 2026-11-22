@@ -135,7 +135,6 @@ export interface WorkflowTransitionsTable {
   issue_type_id: string;
   from_status_id: string;
   to_status_id: string;
-  role_ids: string; // JSON text: Id[]
 }
 
 export interface DefaultStatusSettingsTable {
@@ -197,7 +196,6 @@ export interface CustomFieldDefinitionsTable {
   default_value: string | null;
   possible_values: string | null; // JSON text: string[]
   constraints: string; // JSON text: CustomFieldConstraints
-  scope: string; // JSON text: CustomFieldScope
   sort_order: number;
   is_filter: number; // 0/1
   is_searchable: number; // 0/1
@@ -382,8 +380,6 @@ export interface IssueTemplatesTable {
   title_prefix: string | null;
   description_template: string;
   default_priority_id: string | null;
-  default_label_ids: string | null; // JSON text: Id[]
-  default_assignee_ids: string | null; // JSON text: Id[]
   default_custom_fields: string | null; // JSON text: CustomFieldValue[]
   sort_order: number;
 }

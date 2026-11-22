@@ -46,9 +46,9 @@ describe("saved views", () => {
 
   it("scopes private views to their owner when listing", async () => {
     const w = await world();
-    const pubBob = await w.views.createProjectView({ actorId: w.alice.id, projectId: w.proj.id, ownerId: w.bob.id, name: "Shared", filter: {}, visibility: "public" });
+    const pubBob = await w.views.createProjectView({ actorId: w.admin.id, projectId: w.proj.id, ownerId: w.bob.id, name: "Shared", filter: {}, visibility: "public" });
     const privAlice = await w.views.createProjectView({ actorId: w.alice.id, projectId: w.proj.id, ownerId: w.alice.id, name: "Mine", filter: {}, visibility: "private" });
-    const privBob = await w.views.createProjectView({ actorId: w.alice.id, projectId: w.proj.id, ownerId: w.bob.id, name: "Bob's", filter: {}, visibility: "private" });
+    const privBob = await w.views.createProjectView({ actorId: w.admin.id, projectId: w.proj.id, ownerId: w.bob.id, name: "Bob's", filter: {}, visibility: "private" });
 
     const seen = await w.views.listProjectViews({ projectId: w.proj.id, actorId: w.alice.id, pagination: { limit: 50 } });
     const ids = seen.items.map((v) => v.id);

@@ -3,9 +3,16 @@ import type { Status as StatusT, WorkflowTransition as WorkflowTransitionT } fro
 import type { Ctx } from "./ctx.js";
 import { ConflictError, ForbiddenError } from "./errors.js";
 import { makeCodec } from "./db/codec.js";
+import { readLists, TRANSITION_ROLES } from "./id-lists.js";
 
 const statusCodec = makeCodec(Status);
-const transitionCodec = makeCodec(WorkflowTransition, { json: ["roleIds"] });
+const transitionCodec = makeCodec(WorkflowTransition);
+
+/** Transition rows with the roles that may make them. */
+export async function withRoles(db: Ctx["db"], rows: { id: string }[]): Promise<WorkflowTransitionT[]> {
+  const roles = await readLists(db, TRANSITION_ROLES, rows.map((r) => r.id));
+  return rows.map((r) => transitionCodec.decode({ ...r, role_ids: roles.get(r.id) ?? [] }));
+}
 
 export interface TransitionScope {
   projectId: string;
@@ -49,7 +56,7 @@ export async function transitionsForScope(ctx: Ctx, scope: TransitionScope): Pro
     .where("issue_type_id", "=", scope.issueTypeId)
     .where("from_status_id", "=", scope.fromStatusId)
     .execute();
-  return rows.map((r) => transitionCodec.decode(r));
+  return withRoles(ctx.db, rows);
 }
 
 /** Transitions allowed from `scope.fromStatusId` for an actor holding `actorRoleIds`. */

@@ -6,7 +6,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
-import { issueVisible } from "../issue-visibility.js";
+import { asMissing, issueVisible } from "../issue-visibility.js";
 import { listPage, nullsLast, text } from "../listing.js";
 
 type IterationMethods =
@@ -32,13 +32,13 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
 
     getIteration: async ({ actorId, iterationId }) => {
       const it = await load(iterationId);
-      await assertCanReadProject(ctx, it.projectId, actorId);
+      await asMissing("Iteration", it.id, () => assertCanReadProject(ctx, it.projectId, actorId));
       return it;
     },
 
     updateIteration: async (args) => {
       const it = await load(args.iterationId);
-      await assertCanWrite(ctx, it.projectId, args.actorId, "iteration.manage");
+      await asMissing("Iteration", it.id, () => assertCanWrite(ctx, it.projectId, args.actorId, "iteration.manage"));
       const patch: Record<string, unknown> = {};
       for (const f of ["name", "startDate", "endDate", "sortOrder"] as const) {
         if ((args as Record<string, unknown>)[f] !== undefined) patch[f] = (args as Record<string, unknown>)[f];
@@ -50,7 +50,7 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
 
     deleteIteration: async ({ actorId, iterationId }) => {
       const it = await load(iterationId);
-      await assertCanWrite(ctx, it.projectId, actorId, "iteration.manage");
+      await asMissing("Iteration", it.id, () => assertCanWrite(ctx, it.projectId, actorId, "iteration.manage"));
       await db.deleteFrom("iterations").where("id", "=", iterationId).execute();
     },
 
@@ -65,7 +65,7 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
 
     getIterationProgress: async ({ actorId, iterationId }) => {
       const it = await load(iterationId);
-      await assertCanReadProject(ctx, it.projectId, actorId);
+      await asMissing("Iteration", it.id, () => assertCanReadProject(ctx, it.projectId, actorId));
       const rows = await db
         .selectFrom("issue_iterations as ii")
         .innerJoin("issues as i", "i.id", "ii.issue_id")

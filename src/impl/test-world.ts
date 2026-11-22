@@ -90,7 +90,7 @@ export async function world(db?: Kysely<Database>) {
 
   const HIDDEN_FROM_ALL = [...inPriv.made, ...hiddenConfig, "HIDDENWORD project", "hidden-project", personal.id, key.keyId, ...(ids.notificationId ?? []), "insider@secret.example", "admin@stamm.local"];
   return {
-    db, b, s, A, insider, limited, outsider, pub, priv, ids, shown, privateIssue, inPriv, deleted, ofLimited, privateComment,
+    db, b, s, A, insider, limited, outsider, pub, priv, ids, shown, privateIssue, inPriv, deleted, ofLimited, privateComment, hiddenConfig, personal,
     secretFrom: {
       outsider: [...HIDDEN_FROM_ALL, ...privateIssue.made, ...deleted.made, privateComment.id, "HIDDENWORD"],
       limited: [...HIDDEN_FROM_ALL, ...privateIssue.made, ...deleted.made, ...shown.made, "HIDDENWORD", "shown subject"],

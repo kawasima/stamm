@@ -6,7 +6,9 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject } from "../permissions.js";
-import { issueVisible } from "../issue-visibility.js";
+import { asMissing, issueVisible } from "../issue-visibility.js";
+import { inTransaction } from "../tx.js";
+import { assertNotHeldAsValue } from "./custom-field.js";
 import { listPage, nullsLast, text } from "../listing.js";
 
 type MilestoneMethods =
@@ -40,13 +42,13 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
 
     getMilestone: async ({ actorId, milestoneId }) => {
       const m = await load(milestoneId);
-      await assertCanReadProject(ctx, m.projectId, actorId);
+      await asMissing("Milestone", m.id, () => assertCanReadProject(ctx, m.projectId, actorId));
       return m;
     },
 
     updateMilestone: async (args) => {
       const m = await load(args.milestoneId);
-      await assertCanWrite(ctx, m.projectId, args.actorId, "milestone.manage");
+      await asMissing("Milestone", m.id, () => assertCanWrite(ctx, m.projectId, args.actorId, "milestone.manage"));
       const patch: Record<string, unknown> = {};
       for (const f of ["name", "description", "startDate", "dueDate", "releaseDate", "sortOrder"] as const) {
         if ((args as Record<string, unknown>)[f] !== undefined) patch[f] = (args as Record<string, unknown>)[f];
@@ -56,8 +58,11 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
 
     deleteMilestone: async ({ actorId, milestoneId }) => {
       const m = await load(milestoneId);
-      await assertCanWrite(ctx, m.projectId, actorId, "milestone.manage");
-      await db.deleteFrom("milestones").where("id", "=", milestoneId).execute();
+      await asMissing("Milestone", m.id, () => assertCanWrite(ctx, m.projectId, actorId, "milestone.manage"));
+      await inTransaction(db, async (trx) => {
+        await assertNotHeldAsValue(trx, "version", milestoneId);
+        await trx.deleteFrom("milestones").where("id", "=", milestoneId).execute();
+      });
     },
 
     listMilestones: async ({ actorId, projectId, status, sortBy, sortDirection, pagination }) => {
@@ -73,25 +78,25 @@ export function milestoneBehaviors(ctx: Ctx): Pick<Behaviors, MilestoneMethods> 
 
     closeMilestone: async ({ actorId, milestoneId, releaseDate }) => {
       const m = await load(milestoneId);
-      await assertCanWrite(ctx, m.projectId, actorId, "milestone.manage");
+      await asMissing("Milestone", m.id, () => assertCanWrite(ctx, m.projectId, actorId, "milestone.manage"));
       return save(Milestone.parse({ ...m, status: "closed", ...(releaseDate !== undefined ? { releaseDate } : {}) }));
     },
 
     reopenMilestone: async ({ actorId, milestoneId }) => {
       const m = await load(milestoneId);
-      await assertCanWrite(ctx, m.projectId, actorId, "milestone.manage");
+      await asMissing("Milestone", m.id, () => assertCanWrite(ctx, m.projectId, actorId, "milestone.manage"));
       return save(Milestone.parse({ ...m, status: "open" }));
     },
 
     lockMilestone: async ({ actorId, milestoneId }) => {
       const m = await load(milestoneId);
-      await assertCanWrite(ctx, m.projectId, actorId, "milestone.manage");
+      await asMissing("Milestone", m.id, () => assertCanWrite(ctx, m.projectId, actorId, "milestone.manage"));
       return save(Milestone.parse({ ...m, status: "locked" }));
     },
 
     getMilestoneProgress: async ({ actorId, milestoneId }) => {
       const m = await load(milestoneId); // existence
-      await assertCanReadProject(ctx, m.projectId, actorId);
+      await asMissing("Milestone", m.id, () => assertCanReadProject(ctx, m.projectId, actorId));
       const rows = await db
         .selectFrom("issue_milestones as im")
         .innerJoin("issues as i", "i.id", "im.issue_id")

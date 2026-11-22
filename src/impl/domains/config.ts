@@ -13,6 +13,7 @@ import {
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
+import { assertNotHeldAsValue } from "./custom-field.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
 import { contains, listPage, text, type Dir, type SortKey } from "../listing.js";
 import { assertCanReadProject, assertGlobalAdmin, assertNotLastAdmin, canReadProject, isGlobalAdmin, projectUser } from "../permissions.js";
@@ -40,8 +41,6 @@ interface CrudDef<S extends z.ZodTypeAny> {
   projectScoped?: boolean;
   /** Not readable with a project-limited key: the rows say who holds what across projects. */
   workspaceOnly?: boolean;
-  /** Columns holding a JSON list of this resource's ids, which no foreign key guards. */
-  listedIn?: { table: string; column: string }[];
   /** Further conditions on changing or deleting a row. */
   guardChange?: (id: string, patch: Record<string, unknown> | undefined) => Promise<void>;
   /** The order rows are listed in, by id if not given. May depend on the arguments. */
@@ -130,15 +129,8 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
     await guardWrite(ctx, args);
     const id = args[def.idArg] as string;
     await def.guardChange?.(id, undefined);
-    let q = db.deleteFrom(def.table).where("id", "=", id);
-    for (const { table, column } of def.listedIn ?? []) {
-      q = q.where(sql<boolean>`not exists(select 1 from ${sql.table(table)} t, json_each(t.${sql.ref(column)}) j where j.value = ${id})`);
-    }
-    const res = await q.executeTakeFirst();
-    if (Number(res.numDeletedRows ?? 0) > 0) return;
-    const exists = await db.selectFrom(def.table).select("id").where("id", "=", id).executeTakeFirst();
-    if (!exists) throw new NotFoundError(def.entityName, id);
-    throw new ConflictError("It is in use and cannot be deleted");
+    const res = await db.deleteFrom(def.table).where("id", "=", id).executeTakeFirst();
+    if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError(def.entityName, id);
   };
 
   const list = async (args: Record<string, unknown>): Promise<Paginated<R>> => {
@@ -179,7 +171,7 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
   const label = makeCrud(ctx, { table: "labels", schema: Label, idArg: "labelId", entityName: "Label", projectScoped: true, sort: byName, filters: { query: (v: string) => contains(sql.ref("name"), v) } });
   const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType", sort: inOrder });
   const category = makeCrud(ctx, { table: "categories", schema: Category, idArg: "categoryId", entityName: "Category", projectScoped: true, sort: byName });
-  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true, sort: byName, listedIn: [{ table: "workflow_transitions", column: "role_ids" }] });
+  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true, sort: byName });
   // Users are global-admin-only to write, EXCEPT the very first user on an empty
   // database: someone has to mint the bootstrap admin before any admin exists.
   // Once any user exists this falls back to the admin check, so it can't be used
@@ -232,6 +224,7 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
     },
     // Nobody could grant the role again.
     guardChange: async (id, patch) => {
+      if (patch === undefined) await assertNotHeldAsValue(ctx.db, "user", id);
       if (patch === undefined || (patch.kind !== undefined && patch.kind !== "admin")) await assertNotLastAdmin(ctx, id);
     },
   });

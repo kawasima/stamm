@@ -19,7 +19,8 @@ export const CreateProjectView = z.function()
   .args(z.object({
     actorId: Id,
     projectId: Id,
-    ownerId: Id,
+    /** Defaults to the caller. */
+    ownerId: Id.optional(),
     name: z.string().min(1).max(200),
     layout: ViewLayout.optional(),
     filter: IssueFilter,

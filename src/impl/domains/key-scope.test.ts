@@ -73,7 +73,7 @@ describe("key scope — project-limited", () => {
     expect(await k.getProjectByIdentifier({ actorId: w.alice.id, identifier: "bbb" })).toBeNull();
     await expect(
       k.createIssue({ actorId: w.alice.id, projectId: w.b.id, ...w.base, subject: "nope" }),
-    ).rejects.toBeInstanceOf(ForbiddenError);
+    ).rejects.toBeInstanceOf(NotFoundError);
     await expect(k.createIssue({ actorId: w.alice.id, projectId: w.a.id, ...w.base, subject: "ok" })).resolves.toBeTruthy();
     await w.db.destroy();
   });

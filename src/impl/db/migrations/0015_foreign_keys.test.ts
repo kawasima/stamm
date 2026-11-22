@@ -26,6 +26,7 @@ async function filled() {
   const b = createSqlBehaviors(db as never);
   const s = (await ensureBootstrapped(b))!;
   await b.createIssue({ actorId: s.memberId, projectId: s.projectId, issueTypeId: s.issueTypeId, priorityId: s.priorityId, subject: "x", dueDate: "2026-02-01", estimatedHours: 2 });
+  await to(db, "0015_foreign_keys");
   return { db, s };
 }
 

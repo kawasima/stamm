@@ -57,7 +57,7 @@ describe("write authorization — cross-resource writes respect the target's acc
     const w = await world();
     await expect(
       w.issues.moveIssue({ actorId: w.alice.id, issueId: w.aliceIssue.id, targetProjectId: w.projB.id }),
-    ).rejects.toBeInstanceOf(ForbiddenError);
+    ).rejects.toBeInstanceOf(NotFoundError); // a project they can't see is not there
     await w.db.destroy();
   });
 

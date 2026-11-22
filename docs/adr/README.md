@@ -16,3 +16,4 @@ rather than editing it.
 | [0008](0008-the-database-guards-references.md) | The database guards references | Accepted |
 | [0009](0009-contracts-are-kept-both-ways.md) | Contracts are kept both ways | Accepted |
 | [0010](0010-reading-comes-before-writing-and-what-holds-keeps-holding.md) | Reading comes before writing, and what holds keeps holding | Accepted |
+| [0011](0011-lists-of-ids-are-rows.md) | Lists of ids are rows, and a draft ends when it becomes an issue | Accepted |

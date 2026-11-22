@@ -51,7 +51,7 @@ export const UpdateProject = z.function()
 
 /**
  * Delete a project with its configuration and memberships. Refused while it has
- * issues, drafts or logged time: archive it instead.
+ * issues, drafts or logged time, or a custom field is limited to it: archive it instead.
  */
 export const DeleteProject = z.function()
   .args(z.object({ actorId: Id, projectId: Id }))

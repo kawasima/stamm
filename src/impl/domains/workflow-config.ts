@@ -5,7 +5,8 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanReadProject, assertGlobalAdmin } from "../permissions.js";
-import { assertExist } from "../references.js";
+import { TRANSITION_ROLES, writeList } from "../id-lists.js";
+import { withRoles } from "../workflow.js";
 import { inTransaction } from "../tx.js";
 
 type WorkflowConfigMethods =
@@ -16,7 +17,6 @@ type WorkflowConfigMethods =
 
 export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfigMethods> {
   const db = ctx.db;
-  const transitionCodec = makeCodec(WorkflowTransition, { json: ["roleIds"] });
   const dssCodec = makeCodec(DefaultStatusSetting);
 
   return {
@@ -26,14 +26,13 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
       if (issueTypeId) q = q.where("issue_type_id", "=", issueTypeId);
       if (fromStatusId) q = q.where("from_status_id", "=", fromStatusId);
       const rows = await q.orderBy("id").execute();
-      return { transitions: rows.map((r) => transitionCodec.decode(r)) };
+      return { transitions: await withRoles(db, rows) };
     },
 
     setWorkflowTransitions: async ({ actorId, projectId, issueTypeId, transitions }) => {
       await assertGlobalAdmin(ctx, actorId);
       const created: WorkflowTransitionT[] = [];
       await inTransaction(db, async (trx) => {
-        await assertExist(trx, "roles", transitions.flatMap((t) => t.roleIds));
         await trx
           .deleteFrom("workflow_transitions")
           .where("project_id", "=", projectId)
@@ -48,7 +47,10 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
             toStatusId: t.toStatusId,
             roleIds: t.roleIds,
           });
-          await trx.insertInto("workflow_transitions").values(transitionCodec.encode(wt) as never).execute();
+          await trx.insertInto("workflow_transitions").values({
+            id: wt.id, project_id: projectId, issue_type_id: issueTypeId, from_status_id: wt.fromStatusId, to_status_id: wt.toStatusId,
+          }).execute();
+          await writeList(ctx, trx, TRANSITION_ROLES, wt.id, wt.roleIds);
           created.push(wt);
         }
       });

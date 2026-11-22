@@ -111,7 +111,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       await assertCanWrite(ctx, args.projectId, args.actorId, "issue.create");
       const proj = await db.selectFrom("projects").select("identifier").where("id", "=", args.projectId).executeTakeFirst();
       if (!proj) throw new NotFoundError("Project", args.projectId);
-      await validateCustomFields(ctx, { projectId: args.projectId, issueTypeId: args.issueTypeId, values: args.customFields });
       await assertAssignable(ctx, args.projectId, args.assigneeIds ?? []);
       await assertInProject(db, args.projectId, "labels", args.labelIds ?? []);
       await assertInProject(db, args.projectId, "categories", [args.categoryId]);
@@ -123,6 +122,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       // One instant for the whole creation: the issue, its first history and the feed.
       const occurredAt = ctx.now();
       await inTransaction(db, async (trx) => {
+        await validateCustomFields({ ...ctx, db: trx }, { projectId: args.projectId, issueTypeId: args.issueTypeId, values: args.customFields });
         const maxRow = await trx
           .selectFrom("issues")
           .select((eb) => eb.fn.max("number").as("m"))
@@ -213,15 +213,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     updateIssue: async (args) => {
       await assertCanWriteIssue(ctx, args.issueId, args.actorId, "issue.update");
       const issue = await loadIssue(args.issueId);
-      // Which fields apply depends on the type, so a new type is checked against the
-      // values the issue already has.
-      if (args.customFields !== undefined || (args.issueTypeId !== undefined && args.issueTypeId !== issue.issueTypeId)) {
-        await validateCustomFields(ctx, {
-          projectId: issue.projectId,
-          issueTypeId: args.issueTypeId ?? issue.issueTypeId,
-          values: args.customFields ?? issue.customFields,
-        });
-      }
       const patch: Partial<IssueT> = {};
       for (const f of ["issueTypeId", "priorityId", "subject", "description", "visibility", "customFields"] as const) {
         if (args[f] !== undefined) (patch as Record<string, unknown>)[f] = args[f];
@@ -237,6 +228,15 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       };
       const changed = Object.fromEntries(Object.keys(patch).map((f) => [columnOf[f], encoded[columnOf[f]]]));
       await inTransaction(db, async (trx) => {
+        // Which fields apply depends on the type, so a new type is checked against the
+        // values the issue already has.
+        if (args.customFields !== undefined || (args.issueTypeId !== undefined && args.issueTypeId !== issue.issueTypeId)) {
+          await validateCustomFields({ ...ctx, db: trx }, {
+            projectId: issue.projectId,
+            issueTypeId: args.issueTypeId ?? issue.issueTypeId,
+            values: args.customFields ?? issue.customFields,
+          });
+        }
         if (Object.keys(changed).length > 0) {
           await trx.updateTable("issues").set(changed as never).where("id", "=", merged.id).execute();
         }
@@ -268,11 +268,11 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       // Moving an issue INTO a project is a write there too — require move rights
       // in the destination, not just the source.
       await assertCanWrite(ctx, targetProjectId, actorId, "issue.move");
-      // Tags belong to the project and stay. Field values are the issue's own data:
-      // if one doesn't apply there, the move is refused rather than the value lost.
-      await validateCustomFields(ctx, { projectId: targetProjectId, issueTypeId: newIssueTypeId ?? issue.issueTypeId, values: issue.customFields });
       let moved!: IssueT;
       await inTransaction(db, async (trx) => {
+        // Tags belong to the project and stay. Field values are the issue's own data:
+        // if one doesn't apply there, the move is refused rather than the value lost.
+        await validateCustomFields({ ...ctx, db: trx }, { projectId: targetProjectId, issueTypeId: newIssueTypeId ?? issue.issueTypeId, values: issue.customFields });
         const maxRow = await trx
           .selectFrom("issues")
           .select((eb) => eb.fn.max("number").as("m"))

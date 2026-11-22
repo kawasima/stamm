@@ -19,15 +19,6 @@ export async function assertInProject(db: Kysely<any>, projectId: string, table:
   if (missing.length > 0) throw new ValidationError(`No such ${table} in this project: ${missing.join(", ")}`);
 }
 
-/** Every id names an existing row: for ids kept in a JSON list. */
-export async function assertExist(db: Kysely<any>, table: "roles", ids: string[]): Promise<void> {
-  const wanted = [...new Set(ids)];
-  if (wanted.length === 0) return;
-  const found = new Set((await db.selectFrom(table).select("id").where("id", "in", wanted).execute()).map((r) => r.id as string));
-  const missing = wanted.filter((id) => !found.has(id));
-  if (missing.length > 0) throw new ValidationError(`No such ${table}: ${missing.join(", ")}`);
-}
-
 /** `child` may not be its own ancestor. Call inside the transaction that writes the link. */
 export async function assertNoCycle(
   db: Kysely<any>,

@@ -4,7 +4,6 @@ import { Kysely, SqliteDialect } from "kysely";
 import type { Database } from "./db/schema.js";
 import { migrateToLatest } from "./db/migrate.js";
 import { createSqlBehaviors } from "./index.js";
-import { NotFoundError } from "./errors.js";
 import { world, type W } from "./test-world.js";
 import { SIMPLE_TOOLS } from "../mcp/catalog.js";
 import { CREATE, DELETE, UPDATE } from "../mcp/admin.js";
@@ -141,22 +140,36 @@ describe("every write", () => {
     const hidden: Record<string, string[]> = {
       issueId: [w.privateIssue.id, w.shown.id], childIssueId: [w.privateIssue.id], parentIssueId: [w.privateIssue.id], relatedIssueId: [w.privateIssue.id], targetId: [w.privateIssue.id],
       relationId: [(args.deleteIssueRelation as { relationId: string }).relationId],
+      // what is in a project they can't see, and someone else's private view
+      projectId: [w.priv], targetProjectId: [w.priv], viewId: [...w.ids.viewId!.filter((v) => w.hiddenConfig.includes(v)), w.personal.id],
+      ...Object.fromEntries(["milestoneId", "iterationId", "templateId", "draftId"].map((k) => [k, w.ids[k]!.filter((i) => w.hiddenConfig.includes(i))])),
       ...Object.fromEntries(["commentId", "attachmentId", "timeEntryId"].map((k) => [k, w.ids[k]!.filter((i) => w.privateIssue.made.includes(i) || w.shown.made.includes(i))])),
     };
     const through: string[] = [];
     let tried = 0;
     for (const name of WRITES) {
-      const contract = args[name]!;
       for (const [k, list] of Object.entries(hidden)) {
-        if (!(k in contract)) continue;
+        if (!(k in args[name]!)) continue;
+        // Only the one id is hidden: the issue itself is one they can read.
+        const contract: Record<string, unknown> = { ...args[name]!, ...(k !== "issueId" && "issueId" in args[name]! ? { issueId: w.ofLimited.id } : {}) };
         for (const id of list) {
           const f = faulty(image);
           const before = dump(f.raw);
           tried++;
           const err = await (createSqlBehaviors(f.db)[name] as (a: unknown) => Promise<unknown>)({ ...contract, actorId: w.limited.id, [k]: id }).then(() => undefined, (e: Error) => e);
+          const given = JSON.stringify({ ...contract, [k]: id });
+          const told = [...w.secretFrom.limited].filter((x) => x && err?.message.includes(x) && !given.includes(x));
+          if (told.length > 0) through.push(`${name} ${k}: its error names something hidden`);
           if (name === "unwatchIssue") { if (dump(f.raw) !== before) through.push(`${name} changed something`); continue; }
           if (!err || dump(f.raw) !== before) through.push(`${name} ${k}: went through`);
-          else if (!(err instanceof NotFoundError)) through.push(`${name} ${k}: ${err.name} tells it exists`);
+          else {
+            // What is hidden must look exactly like what is not there.
+            const none = "00000000-0000-4000-8000-000000000000";
+            const g = faulty(image);
+            const other = await (createSqlBehaviors(g.db)[name] as (a: unknown) => Promise<unknown>)({ ...contract, actorId: w.limited.id, [k]: none }).then(() => undefined, (e: Error) => e);
+            const say = (e: Error | undefined, at: string) => `${e?.name}: ${e?.message.replaceAll(at, "?")}`;
+            if (say(err, id) !== say(other, none)) through.push(`${name} ${k}: "${say(err, id)}" but "${say(other, none)}" for what is not there`);
+          }
         }
       }
     }
