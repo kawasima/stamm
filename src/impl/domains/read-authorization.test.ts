@@ -6,6 +6,7 @@ import { configBehaviors } from "./config.js";
 import { userExtraBehaviors } from "./user-extras.js";
 import { projectBehaviors } from "./project.js";
 import { issueBehaviors } from "./issue.js";
+import { issueChangeBehaviors } from "./issue-changes.js";
 import { commentBehaviors } from "./comment.js";
 import { attachmentBehaviors } from "./attachment.js";
 import { issueSatelliteBehaviors } from "./issue-satellites.js";
@@ -26,7 +27,7 @@ async function world() {
   const ctx = makeCtx(db);
   const config = configBehaviors(ctx);
   const project = projectBehaviors(ctx);
-  const issues = issueBehaviors(ctx);
+  const issues = { ...issueBehaviors(ctx), ...issueChangeBehaviors(ctx) };
   const comments = commentBehaviors(ctx);
   const attachments = attachmentBehaviors(ctx);
   const sat = issueSatelliteBehaviors(ctx);
@@ -293,7 +294,7 @@ async function publicCommentWorld() {
   const ctx = makeCtx(db);
   const config = configBehaviors(ctx);
   const project = projectBehaviors(ctx);
-  const issues = issueBehaviors(ctx);
+  const issues = { ...issueBehaviors(ctx), ...issueChangeBehaviors(ctx) };
   const comments = commentBehaviors(ctx);
 
   const admin = await config.createUser({ actorId: "boot", login: "admin", email: "a@x.io", displayName: "Admin", kind: "admin" });

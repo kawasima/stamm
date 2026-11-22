@@ -57,7 +57,7 @@ describe("importGitHub", () => {
     expect(third!.labels!.map((l) => l.name)).toEqual(["not planned"]);
 
     const history = await w.b.listIssueStatusHistory({ actorId: w.seed.adminId, issueId: first!.id, pagination: { limit: 10 } });
-    expect(history.items.map((h) => h.occurredAt)).toEqual(["2026-01-05T00:00:00.000Z"]);
+    expect(history.items.map((h) => h.occurredAt)).toEqual(["2026-01-01T00:00:00.000Z", "2026-01-05T00:00:00.000Z"]);
     expect((await w.commentsOf(first!.id)).map((c) => c.occurredAt)).toEqual(["2026-01-02T00:00:00.000Z", "2026-01-06T00:00:00.000Z"]);
     const created = await w.db.selectFrom("activity_entries").select("occurred_at").where("target_id", "=", first!.id).where("action", "=", "created").executeTakeFirst();
     expect(created!.occurred_at).toBe("2026-01-01T00:00:00.000Z");

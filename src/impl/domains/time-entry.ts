@@ -5,7 +5,8 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite, assertCanReadProject, assertCanReadIssue, isGlobalAdmin } from "../permissions.js";
+import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
+import { assertCanReadIssue } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type TimeMethods = "createTimeEntry" | "getTimeEntry" | "updateTimeEntry" | "deleteTimeEntry" | "listTimeEntries" | "getTimeSummary";

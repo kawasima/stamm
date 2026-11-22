@@ -5,7 +5,8 @@ import { ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent, notifyMentions, resolveMentionRecipients } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue, canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
+import { assertCanWrite, canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
+import { assertCanReadIssue } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { inTransaction } from "../tx.js";
 

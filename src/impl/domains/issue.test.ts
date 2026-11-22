@@ -5,6 +5,7 @@ import { makeCtx } from "../ctx.js";
 import { configBehaviors } from "./config.js";
 import { projectBehaviors } from "./project.js";
 import { issueBehaviors } from "./issue.js";
+import { issueChangeBehaviors } from "./issue-changes.js";
 
 function steppingClock(): () => string {
   let t = Date.parse("2026-01-01T00:00:00.000Z");
@@ -24,7 +25,7 @@ async function world() {
   const ctx = makeCtx(db, { now: steppingClock(), genId: countingIds() });
   const config = configBehaviors(ctx);
   const project = projectBehaviors(ctx);
-  const issues = issueBehaviors(ctx);
+  const issues = { ...issueBehaviors(ctx), ...issueChangeBehaviors(ctx) };
 
   const admin = await config.createUser({ actorId: "boot", login: "admin", email: "admin@x.io", displayName: "Admin", kind: "admin" });
   const memberRole = await config.createRole({ actorId: admin.id, name: "Member", permissions: ["issue.create", "issue.update", "issue.delete", "issue.move"], issuesVisibility: "all" });
@@ -132,8 +133,10 @@ describe("issue domain — lifecycle", () => {
     expect(moved.statusId).toBe(w.doing.id);
 
     const history = await w.issues.listIssueStatusHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
-    expect(history.items).toHaveLength(1);
-    expect(history.items[0]).toMatchObject({ fromStatusId: w.todo.id, toStatusId: w.doing.id, userId: w.alice.id });
+    expect(history.items).toHaveLength(2);
+    expect(history.items[0]).toMatchObject({ toStatusId: w.todo.id, userId: w.alice.id });
+    expect(history.items[0]!.fromStatusId).toBeUndefined();
+    expect(history.items[1]).toMatchObject({ fromStatusId: w.todo.id, toStatusId: w.doing.id, userId: w.alice.id });
 
     // todo -> todo has no transition rule, so it is rejected
     await expect(
@@ -150,7 +153,7 @@ describe("issue domain — lifecycle", () => {
     ).rejects.toBeInstanceOf(ConflictError);
     expect((await w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id })).statusId).toBe(w.todo.id);
     const history = await w.issues.listIssueStatusHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
-    expect(history.items).toHaveLength(0);
+    expect(history.items.map((h) => h.toStatusId)).toEqual([w.todo.id]); // only the initial status
     // the matching expectation goes through
     const moved = await w.issues.transitionIssueStatus({ actorId: w.alice.id, issueId: issue.id, toStatusId: w.doing.id, expectedStatusId: w.todo.id });
     expect(moved.statusId).toBe(w.doing.id);
@@ -178,8 +181,8 @@ describe("issue domain — lifecycle", () => {
     const winnerStatus = (won[0] as PromiseFulfilledResult<{ statusId: string }>).value.statusId;
     expect((await w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id })).statusId).toBe(winnerStatus);
     const history = await w.issues.listIssueStatusHistory({ actorId: w.alice.id, issueId: issue.id, pagination: { limit: 20 } });
-    expect(history.items).toHaveLength(1);
-    expect(history.items[0]).toMatchObject({ fromStatusId: w.todo.id, toStatusId: winnerStatus });
+    expect(history.items).toHaveLength(2);
+    expect(history.items[1]).toMatchObject({ fromStatusId: w.todo.id, toStatusId: winnerStatus });
     await w.db.destroy();
   });
 

@@ -58,7 +58,9 @@ describe("MCP end-to-end over a real SQL backend", () => {
     const ok = await client.callTool({ name: "issue_transition", arguments: { actorId: w.alice.id, issueId: id, toStatusId: w.done.id } });
     expect(ok.isError).toBeFalsy();
     const history = await client.callTool({ name: "issue_history", arguments: { actorId: w.alice.id, issueId: id, pagination: { limit: 20 } } });
-    expect((history.structuredContent as { items: unknown[] }).items).toHaveLength(1);
+    // entering the initial status, then the transition
+    expect((history.structuredContent as { items: { fromStatusId?: string; toStatusId: string }[] }).items.map((h) => [h.fromStatusId, h.toStatusId]))
+      .toEqual([[undefined, w.todo.id], [w.todo.id, w.done.id]]);
 
     const bad = await client.callTool({ name: "issue_transition", arguments: { actorId: w.alice.id, issueId: id, toStatusId: w.todo.id } });
     expect(bad.isError).toBe(true);

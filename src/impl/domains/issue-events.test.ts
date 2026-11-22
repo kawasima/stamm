@@ -5,6 +5,7 @@ import { configBehaviors } from "./config.js";
 import { projectBehaviors } from "./project.js";
 import { workflowConfigBehaviors } from "./workflow-config.js";
 import { issueBehaviors } from "./issue.js";
+import { issueChangeBehaviors } from "./issue-changes.js";
 import { issueSatelliteBehaviors } from "./issue-satellites.js";
 import { activityBehaviors } from "./activity.js";
 
@@ -17,7 +18,7 @@ async function world() {
   const config = configBehaviors(ctx);
   const project = projectBehaviors(ctx);
   const workflow = workflowConfigBehaviors(ctx);
-  const issues = issueBehaviors(ctx);
+  const issues = { ...issueBehaviors(ctx), ...issueChangeBehaviors(ctx) };
   const sat = issueSatelliteBehaviors(ctx);
   const activity = activityBehaviors(ctx);
 
@@ -93,7 +94,7 @@ describe("issue deletion preserves events (immutable data model)", () => {
     // the resource is gone
     await expect(w.issues.getIssue({ actorId: w.alice.id, issueId: issue.id })).rejects.toThrow();
 
-    // but its events survive — only a global admin can audit a deleted issue's history
+    // but its events survive
     const schedule = await w.issues.listIssueScheduleHistory({ actorId: w.admin.id, issueId: issue.id, pagination: { limit: 20 } });
     expect(schedule.items.length).toBeGreaterThan(0);
 

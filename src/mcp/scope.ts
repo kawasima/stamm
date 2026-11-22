@@ -13,7 +13,7 @@ import type { KeyScope } from "../schema/index.js";
  */
 export const PROJECT_SCOPED_TOOLS: ReadonlySet<string> = new Set([
   "issue_get", "issue_get_detail", "issue_get_by_key", "issue_search", "issue_children",
-  "issue_available_transitions", "issue_history", "issue_schedule_history", "issue_estimation_history",
+  "issue_available_transitions", "issue_change_list", "issue_history", "issue_schedule_history", "issue_estimation_history",
   "issue_watchers", "issue_relations",
   "issue_create", "issue_update", "issue_delete", "issue_transition", "issue_watch", "issue_unwatch",
   "issue_relate", "issue_unrelate",

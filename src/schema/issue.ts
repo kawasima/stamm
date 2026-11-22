@@ -46,7 +46,11 @@ export const Issue = LongTermEvent
     customFields: z.array(CustomFieldValue).max(200).default([]),
   });
 
-/** Issue status change (E) - append-only history of status transitions */
+/**
+ * Issue status change (E) - append-only history of status transitions. The first
+ * one is the issue entering its initial status when it is created, and has no
+ * `fromStatusId`, so the history alone says which status an issue had when.
+ */
 export const IssueStatusChange = Event.extend({
   issueId: Id,
   fromStatusId: Id.optional(),
@@ -71,6 +75,16 @@ export const IssueEstimationChange = Event.extend({
   toHours: Hours,
   userId: Id,
 });
+
+/** The kinds of change an issue's history records. Each is one Event type. */
+export const IssueChangeKind = z.enum(["status", "schedule", "estimation"]);
+
+/** Any recorded change of an issue, tagged with its kind. */
+export const IssueChange = z.discriminatedUnion("kind", [
+  IssueStatusChange.extend({ kind: z.literal("status") }),
+  IssueScheduleChange.extend({ kind: z.literal("schedule") }),
+  IssueEstimationChange.extend({ kind: z.literal("estimation") }),
+]);
 
 // ============================================================
 // Current state (R) - intersection entities
@@ -183,3 +197,5 @@ export type IssueProgress = z.infer<typeof IssueProgress>;
 export type IssueDetail = z.infer<typeof IssueDetail>;
 export type IssueListItem = z.infer<typeof IssueListItem>;
 export type IssueInclude = z.infer<typeof IssueInclude>;
+export type IssueChangeKind = z.infer<typeof IssueChangeKind>;
+export type IssueChange = z.infer<typeof IssueChange>;

@@ -3,7 +3,8 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertCanWrite, assertCanReadIssue } from "../permissions.js";
+import { assertCanWrite, isGlobalAdmin } from "../permissions.js";
+import { assertCanReadIssue } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type AttachmentMethods = "createAttachment" | "getAttachment" | "deleteAttachment" | "listAttachments";
@@ -28,6 +29,8 @@ export function attachmentBehaviors(ctx: Ctx): Pick<Behaviors, AttachmentMethods
    *  the issue. Non-issue targets are out of v1 scope (open). */
   const gateRead = async (targetType: string, targetId: string, actorId: string) => {
     if (targetType !== "issue") return;
+    // An admin may still audit what was attached to a since-deleted issue.
+    if (await isGlobalAdmin(ctx, actorId)) return;
     await assertCanReadIssue(ctx, targetId, actorId);
   };
 

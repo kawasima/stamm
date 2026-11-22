@@ -6,10 +6,13 @@ import {
   MarkdownContent,
   PaginationParams,
   Percentage,
+  Timestamp,
 } from "../schema/common.js";
 import {
   Issue,
   IssueAssignee,
+  IssueChange,
+  IssueChangeKind,
   IssueDetail,
   IssueEstimation,
   IssueInclude,
@@ -185,6 +188,25 @@ export const ListIssueStatusHistory = z.function()
     pagination: PaginationParams,
   }))
   .returns(z.promise(PaginatedResult(IssueStatusChange)));
+
+/**
+ * List the changes of a project's issues, oldest first: the same Events the
+ * per-issue histories return, in one listing. Covers issues that are in the
+ * project now (history follows an issue when it moves) and issues deleted from it.
+ */
+export const ListIssueChanges = z.function()
+  .args(z.object({
+    actorId: Id,
+    projectId: Id,
+    /** Only these kinds; all when omitted. */
+    kinds: z.array(IssueChangeKind).min(1).optional(),
+    /** Occurred at or after this instant. */
+    occurredFrom: Timestamp.optional(),
+    /** Occurred strictly before this instant. */
+    occurredUntil: Timestamp.optional(),
+    pagination: PaginationParams,
+  }))
+  .returns(z.promise(PaginatedResult(IssueChange)));
 
 /** List an issue's schedule (start/due date) change history */
 export const ListIssueScheduleHistory = z.function()

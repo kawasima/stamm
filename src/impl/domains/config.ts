@@ -40,6 +40,8 @@ interface CrudDef<S extends z.ZodTypeAny> {
   projectScoped?: boolean;
   /** Not readable with a project-limited key: the rows say who holds what across projects. */
   workspaceOnly?: boolean;
+  /** Where rows of this resource are referenced from. A referenced row can't be deleted. */
+  referencedBy?: { table: string; column: string }[];
   /** Narrow which rows a reader sees. Applied to get and list alike. */
   readFilter?: (ctx: Ctx, args: Record<string, unknown>) => ((q: ConfigQuery) => ConfigQuery) | undefined;
   /**
@@ -120,8 +122,16 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   const remove = async (args: Record<string, unknown>): Promise<void> => {
     await guardWrite(ctx, args);
     const id = args[def.idArg] as string;
-    const res = await db.deleteFrom(def.table).where("id", "=", id).executeTakeFirst();
-    if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError(def.entityName, id);
+    // One statement, so nothing can come to reference the row in between.
+    let q = db.deleteFrom(def.table).where("id", "=", id);
+    for (const ref of def.referencedBy ?? []) {
+      q = q.where((eb) => eb.not(eb.exists(eb.selectFrom(ref.table).select(`${ref.table}.${ref.column}`).where(`${ref.table}.${ref.column}`, "=", id))));
+    }
+    const res = await q.executeTakeFirst();
+    if (Number(res.numDeletedRows ?? 0) > 0) return;
+    const exists = await db.selectFrom(def.table).select("id").where("id", "=", id).executeTakeFirst();
+    if (!exists) throw new NotFoundError(def.entityName, id);
+    throw new ConflictError(`${def.entityName} ${id} is in use and cannot be deleted`);
   };
 
   const list = async (args: Record<string, unknown>): Promise<Paginated<R>> => {
@@ -159,7 +169,17 @@ type ConfigMethods =
   | "createUserGroup" | "getUserGroup" | "updateUserGroup" | "deleteUserGroup" | "listUserGroups";
 
 export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
-  const status = makeCrud(ctx, { table: "statuses", schema: Status, idArg: "statusId", entityName: "Status" });
+  const status = makeCrud(ctx, { table: "statuses", schema: Status, idArg: "statusId", entityName: "Status",
+    // History is read by status, so a status in it must keep its meaning.
+    referencedBy: [
+      { table: "issues", column: "status_id" },
+      { table: "issue_status_changes", column: "from_status_id" },
+      { table: "issue_status_changes", column: "to_status_id" },
+      { table: "workflow_transitions", column: "from_status_id" },
+      { table: "workflow_transitions", column: "to_status_id" },
+      { table: "default_status_settings", column: "status_id" },
+    ],
+  });
   const priority = makeCrud(ctx, { table: "priorities", schema: Priority, idArg: "priorityId", entityName: "Priority" });
   const label = makeCrud(ctx, { table: "labels", schema: Label, idArg: "labelId", entityName: "Label", projectScoped: true });
   const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType" });

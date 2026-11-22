@@ -13,6 +13,7 @@ import * as indexes0010 from "./migrations/0010_indexes.js";
 import * as credentialScope0011 from "./migrations/0011_credential_scope.js";
 import * as userLoginUnique0012 from "./migrations/0012_user_login_unique.js";
 import * as projectCoc0013 from "./migrations/0013_project_code_of_conduct.js";
+import * as completeHistory0014 from "./migrations/0014_complete_issue_history.js";
 
 /** All migrations in order, keyed by a sortable name. */
 const MIGRATIONS: Record<string, Migration> = {
@@ -29,6 +30,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "0011_credential_scope": credentialScope0011,
   "0012_user_login_unique": userLoginUnique0012,
   "0013_project_code_of_conduct": projectCoc0013,
+  "0014_complete_issue_history": completeHistory0014,
 };
 
 class StaticMigrationProvider implements MigrationProvider {
@@ -37,9 +39,10 @@ class StaticMigrationProvider implements MigrationProvider {
   }
 }
 
+export const migratorFor = (db: Kysely<any>): Migrator => new Migrator({ db, provider: new StaticMigrationProvider() });
+
 /** Apply all pending migrations. Throws on the first failure. */
 export async function migrateToLatest(db: Kysely<any>): Promise<void> {
-  const migrator = new Migrator({ db, provider: new StaticMigrationProvider() });
-  const { error } = await migrator.migrateToLatest();
+  const { error } = await migratorFor(db).migrateToLatest();
   if (error) throw error instanceof Error ? error : new Error(String(error));
 }

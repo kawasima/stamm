@@ -21,12 +21,6 @@ export const ActivityAction = z.enum([
   "draft_converted",
 ]);
 
-export const PropertyChange = z.object({
-  field: z.string(),
-  oldValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
-  newValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
-});
-
 /**
  * Activity entry (E) - append-only audit log.
  *
@@ -38,6 +32,9 @@ export const PropertyChange = z.object({
  *   updatedAt = the most recent entry for that target (.occurredAt)
  * Derivation query: WHERE targetType=… AND targetId=…
  *
+ * An entry says that something happened, to what, by whom and when. What exactly
+ * changed is recorded once, in the typed Event (IssueStatusChange, …), not here.
+ *
  * `userId` is required: it is the acting principal (the `actorId` passed to the
  * mutating behavior). This is why every mutation contract carries an actorId.
  */
@@ -46,10 +43,8 @@ export const ActivityEntry = z.object({
   projectId: Id,
   userId: Id,
   action: ActivityAction,
-  changes: z.array(PropertyChange).default([]),
   occurredAt: Timestamp,
 }).merge(TargetRef);
 
 export type ActivityAction = z.infer<typeof ActivityAction>;
-export type PropertyChange = z.infer<typeof PropertyChange>;
 export type ActivityEntry = z.infer<typeof ActivityEntry>;

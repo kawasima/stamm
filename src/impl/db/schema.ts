@@ -167,6 +167,7 @@ export interface IssueStatusChangesTable {
   to_status_id: string;
   user_id: string;
   occurred_at: string;
+  seq: number;
 }
 
 export interface IssueAssigneesTable { id: string; issue_id: string; assignee_id: string }
@@ -279,7 +280,6 @@ export interface ActivityEntriesTable {
   project_id: string;
   user_id: string;
   action: string;
-  changes: string; // JSON text: PropertyChange[]
   occurred_at: string;
   target_type: string;
   target_id: string;
@@ -344,6 +344,7 @@ export interface IssueScheduleChangesTable {
   to_start_date: string | null;
   from_due_date: string | null;
   to_due_date: string | null;
+  seq: number;
 }
 
 export interface IssueEstimationChangesTable {
@@ -353,6 +354,7 @@ export interface IssueEstimationChangesTable {
   occurred_at: string;
   from_hours: number | null;
   to_hours: number;
+  seq: number;
 }
 
 export interface DraftIssuesTable {

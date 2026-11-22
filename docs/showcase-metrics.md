@@ -83,19 +83,18 @@ unhelpfully empty.
 >   `in_progress` / `done`). This is the only "started/done" definition you need.
 > - **Issues** — `issue_search` `{ filter, pagination, include:
 >   ["assignees","schedule"] }` (page through fully).
-> - **Status history per issue** — `issue_history` `{ issueId, pagination }`
->   (chronological status transitions: `fromStatusId`, `toStatusId`,
->   `occurredAt`).
-> - **Schedule history** — `issue_schedule_history` (typed `from→to` of
->   start/due dates).
-> - **Estimation history** — `issue_estimation_history`, plus `time_summary` /
->   `time_list` for logged hours.
+> - **Change history** — `issue_change_list` `{ projectId, pagination }` (page
+>   through fully): every status, schedule and estimation change of the project's
+>   issues in time order, tagged with `kind`. A status change has `fromStatusId`,
+>   `toStatusId` and `occurredAt`; an issue's first one has no `fromStatusId` and is
+>   its creation. Do not read `issue_history` per issue: that is one call per issue.
+> - **Logged hours** — `time_summary` / `time_list`.
 >
 > ### Charts to build (compute each client-side)
 >
 > 1. **Cumulative Flow Diagram (CFD).** For a date range, for each day, the count
 >    of issues in each status **category**. Reconstruct each issue's category on a
->    given day by replaying its `issue_history` up to that day (the last
+>    given day by replaying its status changes up to that day (the last
 >    transition on or before the day gives its status; map to category). Stack
 >    `todo` / `in_progress` / `done` as areas over time.
 > 2. **Cycle-time distribution.** Per issue: `started` = first transition into an
@@ -105,7 +104,7 @@ unhelpfully empty.
 >    percentile.
 > 3. **Throughput run chart.** Count issues that entered a `done`-category status
 >    per week (or month — make the window a control). One bar/point per bucket.
-> 4. **Due-date slippage.** Per issue from `issue_schedule_history`: `slip = last
+> 4. **Due-date slippage.** Per issue from its `schedule` changes: `slip = last
 >    toDueDate − first toDueDate` (the first recorded due date is the commitment
 >    baseline). Show a distribution and the worst offenders.
 > 5. **WIP and aging.** Current `in_progress`-category issues (`issue_search`
@@ -158,7 +157,7 @@ unhelpfully empty.
   The recipes are verified by [`sim/metrics.mjs`](../sim/metrics.mjs); this
   showcase is their UI.
 - **The CFD is the demanding one.** It needs per-day historical state, which you
-  reconstruct by replaying `issue_history` — there is no "status as of date"
+  reconstruct by replaying the status changes — there is no "status as of date"
   tool, by design (the history is the source). Cache the replayed timeline
   client-side so you do not refetch per day.
 - **Scale.** If a project grows large enough that paging `issue_search` to count

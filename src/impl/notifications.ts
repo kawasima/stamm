@@ -3,7 +3,8 @@ import type { NotificationEventType } from "../schema/index.js";
 import type { Database } from "./db/schema.js";
 import type { Ctx } from "./ctx.js";
 import { extractMentions } from "./mentions.js";
-import { assertCanReadIssue, isMember } from "./permissions.js";
+import { isMember } from "./permissions.js";
+import { assertCanReadIssue } from "./issue-visibility.js";
 
 export interface NotifyIssueInput {
   projectId: string;

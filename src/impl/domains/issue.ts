@@ -11,7 +11,7 @@ import {
   Milestone,
   Iteration,
 } from "../../schema/index.js";
-import { IssueStatusChange, IssueScheduleChange, IssueEstimationChange } from "../../schema/index.js";
+import { IssueEstimationChange } from "../../schema/index.js";
 import type { Issue as IssueT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
@@ -19,9 +19,10 @@ import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { sql } from "kysely";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
-import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
+import { recordEstimationChange, recordScheduleChange, recordStatusChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue, isGlobalAdmin, isMember, roleIdsOf, rolesOf, scopeAllowsProject, assertAssignable } from "../permissions.js";
+import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, rolesOf, scopeAllowsProject, assertAssignable } from "../permissions.js";
+import { assertCanReadIssue, issueVisible, readableIssueIds } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
@@ -30,8 +31,7 @@ import { inTransaction } from "../tx.js";
 type IssueMethods =
   | "createIssue" | "getIssue" | "getIssueByKey" | "getIssueDetail"
   | "updateIssue" | "deleteIssue" | "moveIssue"
-  | "transitionIssueStatus" | "getAvailableTransitions" | "listIssueStatusHistory"
-  | "listIssueScheduleHistory" | "listIssueEstimationHistory"
+  | "transitionIssueStatus" | "getAvailableTransitions"
   | "listIssues" | "listChildIssues";
 
 export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
@@ -41,9 +41,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
   const estimationCodec = makeCodec(IssueEstimation);
   const progressCodec = makeCodec(IssueProgress);
   const relationCodec = makeCodec(IssueRelation);
-  const statusChangeCodec = makeCodec(IssueStatusChange);
-  const scheduleChangeCodec = makeCodec(IssueScheduleChange);
-  const estimationChangeCodec = makeCodec(IssueEstimationChange);
   // Codecs for the resources a detail view hydrates its satellites into.
   const userCodec = makeCodec(User);
   const labelResCodec = makeCodec(Label);
@@ -57,44 +54,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     return issueCodec.decode(row);
   };
 
-  const isAssignee = async (issueId: string, userId: string): Promise<boolean> => {
-    const row = await db
-      .selectFrom("issue_assignees")
-      .select("id")
-      .where("issue_id", "=", issueId)
-      .where("assignee_id", "=", userId)
-      .executeTakeFirst();
-    return row !== undefined;
-  };
-
-  /**
-   * Read scoping: global admins see all. Otherwise a private project or a
-   * private issue is hidden from non-members (author always sees their own). A
-   * member whose roles are all `own_or_assigned` only sees issues they authored
-   * or are assigned to.
-   */
-  const canSeeIssue = async (actorId: string, issue: IssueT): Promise<boolean> => {
-    if (!scopeAllowsProject(ctx, issue.projectId)) return false;
-    if (await isGlobalAdmin(ctx, actorId)) return true;
-    const author = issue.authorId === actorId;
-    const member = await isMember(ctx, issue.projectId, actorId);
-    const cat = await db
-      .selectFrom("project_categories")
-      .select("visibility")
-      .where("project_id", "=", issue.projectId)
-      .executeTakeFirst();
-    if (cat?.visibility === "private" && !member && !author) return false;
-    if (issue.visibility === "private" && !member && !author) return false;
-    if (member) {
-      const roles = await rolesOf(ctx, issue.projectId, actorId);
-      const restricted = roles.length > 0 && roles.every((r) => r.issuesVisibility === "own_or_assigned");
-      if (restricted && !author) return isAssignee(issue.id, actorId);
-    }
-    return true;
-  };
-
   const seenOrNotFound = async (actorId: string, issue: IssueT): Promise<IssueT> => {
-    if (!(await canSeeIssue(actorId, issue))) throw new NotFoundError("Issue", issue.id);
+    await assertCanReadIssue(ctx, issue.id, actorId);
     return issue;
   };
 
@@ -146,6 +107,8 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const statusId = args.statusId ?? (await resolveDefaultStatus(ctx, args.projectId, args.issueTypeId)).id;
 
       let issue!: IssueT;
+      // One instant for the whole creation: the issue, its first history and the feed.
+      const occurredAt = ctx.now();
       await inTransaction(db, async (trx) => {
         const maxRow = await trx
           .selectFrom("issues")
@@ -169,6 +132,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         });
         const iid = issue.id;
         await trx.insertInto("issues").values(issueCodec.encode(issue) as never).execute();
+        await recordStatusChange(ctx, trx, { issueId: iid, userId: args.actorId, toStatusId: statusId, occurredAt });
         if (args.assigneeIds?.length) {
           await trx.insertInto("issue_assignees").values(args.assigneeIds.map((assigneeId) => ({ id: ctx.genId(), issue_id: iid, assignee_id: assigneeId }))).execute();
         }
@@ -180,14 +144,14 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         if (args.parentIssueId) await trx.insertInto("issue_parents").values({ id: ctx.genId(), child_issue_id: iid, parent_issue_id: args.parentIssueId }).execute();
         if (args.startDate !== undefined || args.dueDate !== undefined) {
           await trx.insertInto("issue_schedules").values({ id: ctx.genId(), issue_id: iid, start_date: args.startDate ?? null, due_date: args.dueDate ?? null }).execute();
-          await recordScheduleChange(ctx, trx, { issueId: iid, projectId: args.projectId, userId: args.actorId, from: {}, to: { startDate: args.startDate, dueDate: args.dueDate } });
+          await recordScheduleChange(ctx, trx, { issueId: iid, projectId: args.projectId, userId: args.actorId, from: {}, to: { startDate: args.startDate, dueDate: args.dueDate }, occurredAt });
         }
         if (args.estimatedHours !== undefined) {
           await trx.insertInto("issue_estimations").values({ id: ctx.genId(), issue_id: iid, estimated_hours: args.estimatedHours }).execute();
-          await recordEstimationChange(ctx, trx, { issueId: iid, projectId: args.projectId, userId: args.actorId, fromHours: null, toHours: args.estimatedHours });
+          await recordEstimationChange(ctx, trx, { issueId: iid, projectId: args.projectId, userId: args.actorId, fromHours: null, toHours: args.estimatedHours, occurredAt });
         }
-        await appendActivity(ctx, trx, { projectId: args.projectId, userId: args.actorId, action: "created", targetType: "issue", targetId: iid });
-        await notifyIssueEvent(ctx, trx, { projectId: args.projectId, issueId: iid, authorId: args.actorId, eventType: "issue.created", title: `${issue.key}-${issue.number}: ${issue.subject}`, actorId: args.actorId });
+        await appendActivity(ctx, trx, { projectId: args.projectId, userId: args.actorId, action: "created", targetType: "issue", targetId: iid, occurredAt });
+        await notifyIssueEvent(ctx, trx, { projectId: args.projectId, issueId: iid, authorId: args.actorId, eventType: "issue.created", title: `${issue.key}-${issue.number}: ${issue.subject}`, actorId: args.actorId, occurredAt });
       });
       return issue;
     },
@@ -226,18 +190,10 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         ]);
       // The parent (and relations) may live in another project; show them only if
       // the actor could read them directly.
-      const visibleParent = parent && (await canSeeIssue(actorId, parent)) ? parent : undefined;
-      let visibleRelations = relations;
-      if (ctx.scope?.projectIds && relations.length) {
-        const ok = await db
-          .selectFrom("issues")
-          .select("id")
-          .where("id", "in", relations.map((r) => r.relatedIssueId))
-          .where("project_id", "in", ctx.scope.projectIds)
-          .execute();
-        const okIds = new Set(ok.map((r) => r.id));
-        visibleRelations = relations.filter((r) => okIds.has(r.relatedIssueId));
-      }
+      const linked = [...(parent ? [parent.id] : []), ...relations.map((r) => r.relatedIssueId)];
+      const readable = await readableIssueIds(ctx, actorId, linked);
+      const visibleParent = parent && readable.has(parent.id) ? parent : undefined;
+      const visibleRelations = relations.filter((r) => readable.has(r.relatedIssueId));
       return IssueDetail.parse({ ...issue, assignees, labels, watchers, relations: visibleRelations, category, milestone, iteration, parent: visibleParent, schedule, estimation, progress });
     },
 
@@ -353,10 +309,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
         if (Number(res.numUpdatedRows) === 0) {
           throw new ConflictError(`Issue ${issueId} changed status concurrently; reload and retry`);
         }
-        await trx
-          .insertInto("issue_status_changes")
-          .values({ id: ctx.genId(), issue_id: issueId, from_status_id: fromStatusId, to_status_id: toStatusId, user_id: actorId, occurred_at: occurredAt })
-          .execute();
+        await recordStatusChange(ctx, trx, { issueId, userId: actorId, fromStatusId, toStatusId, occurredAt });
         await appendActivity(ctx, trx, { projectId: issue.projectId, userId: actorId, action: "status_changed", targetType: "issue", targetId: issueId, occurredAt });
         await notifyIssueEvent(ctx, trx, { projectId: issue.projectId, issueId, authorId: issue.authorId, eventType: "issue.status_changed", title: `Status changed: ${issue.key}-${issue.number}`, actorId, occurredAt });
         if (toCategory === "done") {
@@ -382,57 +335,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       return { transitions: out };
     },
 
-    listIssueStatusHistory: async ({ actorId, issueId, pagination }) => {
-      await assertCanReadIssue(ctx, issueId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
-      let q = db.selectFrom("issue_status_changes").selectAll().where("issue_id", "=", issueId);
-      if (cursor) {
-        const sep = cursor.indexOf(" ");
-        const co = cursor.slice(0, sep);
-        const ci = cursor.slice(sep + 1);
-        q = q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]));
-      }
-      const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
-      const items = rows.map((r) => statusChangeCodec.decode(r));
-      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
-    },
-
-    listIssueScheduleHistory: async ({ actorId, issueId, pagination }) => {
-      await assertCanReadIssue(ctx, issueId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
-      let q = db.selectFrom("issue_schedule_changes").selectAll().where("issue_id", "=", issueId);
-      if (cursor) {
-        const sep = cursor.indexOf(" ");
-        const co = cursor.slice(0, sep);
-        const ci = cursor.slice(sep + 1);
-        q = q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]));
-      }
-      const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
-      const items = rows.map((r) => scheduleChangeCodec.decode(r));
-      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
-    },
-
-    listIssueEstimationHistory: async ({ actorId, issueId, pagination }) => {
-      await assertCanReadIssue(ctx, issueId, actorId);
-      const limit = pagination?.limit ?? 20;
-      const cursor = decodeCursor(pagination?.cursor);
-      let q = db.selectFrom("issue_estimation_changes").selectAll().where("issue_id", "=", issueId);
-      if (cursor) {
-        const sep = cursor.indexOf(" ");
-        const co = cursor.slice(0, sep);
-        const ci = cursor.slice(sep + 1);
-        q = q.where((eb) => eb.or([eb("occurred_at", ">", co), eb.and([eb("occurred_at", "=", co), eb("id", ">", ci)])]));
-      }
-      const rows = await q.orderBy("occurred_at").orderBy("id").limit(limit + 1).execute();
-      const items = rows.map((r) => estimationChangeCodec.decode(r));
-      const page = buildPage(items, (c) => `${c.occurredAt} ${c.id}`, limit);
-      return { items: page.items, nextCursor: page.nextCursor };
-    },
-
     listChildIssues: async ({ actorId, parentIssueId, pagination }) => {
       await assertCanReadIssue(ctx, parentIssueId, actorId);
       const limit = pagination?.limit ?? 20;
@@ -445,7 +347,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
             eb.selectFrom("issue_parents").select("id").whereRef("issue_parents.child_issue_id", "=", "issues.id").where("issue_parents.parent_issue_id", "=", parentIssueId),
           ),
         );
-      if (ctx.scope?.projectIds) q = q.where("issues.project_id", "in", ctx.scope.projectIds);
+      q = q.where(await issueVisible(ctx, actorId));
       if (cursor) q = q.where("issues.id", ">", cursor);
       const rows = await q.orderBy("issues.id").limit(limit + 1).execute();
       const page = buildPage(rows.map((r: Record<string, unknown>) => issueCodec.decode(r)), (i) => i.id, limit);
@@ -507,31 +409,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       }
       if (f.query) q = q.where("issues.subject", "like", `%${f.query}%`);
 
-      // A project-limited key sees only its projects, whatever else matches.
-      if (ctx.scope?.projectIds) q = q.where("issues.project_id", "in", ctx.scope.projectIds);
-
-      // Visibility scoped in SQL (not in app): see canSeeIssue for the policy.
-      if (!(await isGlobalAdmin(ctx, args.actorId))) {
-        const A = args.actorId;
-        q = q.where(sql<boolean>`(
-          (
-            issues.author_id = ${A}
-            or exists(select 1 from project_memberships pm where pm.project_id = issues.project_id and pm.user_id = ${A})
-            or ((select visibility from project_categories pc where pc.project_id = issues.project_id) = 'public' and issues.visibility = 'public')
-          )
-          and (
-            issues.author_id = ${A}
-            or exists(select 1 from issue_assignees ia where ia.issue_id = issues.id and ia.assignee_id = ${A})
-            or not exists(select 1 from project_memberships pm where pm.project_id = issues.project_id and pm.user_id = ${A})
-            or exists(
-              select 1 from project_memberships pm
-              join project_membership_roles mr on mr.membership_id = pm.id
-              join roles r on r.id = mr.role_id
-              where pm.project_id = issues.project_id and pm.user_id = ${A} and r.issues_visibility = 'all'
-            )
-          )
-        )`);
-      }
+      q = q.where(await issueVisible(ctx, args.actorId));
 
       // Sort expression (text-comparable; numbers zero-irrelevant since we keep a
       // numeric path), with a stable id tiebreak. dueDate nulls sort last.
@@ -623,6 +501,19 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       if (include.includes("schedule")) await attachOne("schedule", "issue_schedules", scheduleCodec);
       if (include.includes("estimation")) await attachOne("estimation", "issue_estimations", estimationCodec);
       if (include.includes("progress")) await attachOne("progress", "issue_progress", progressCodec);
+
+      // A parent or related issue may be one the actor can't read.
+      const linked = items.flatMap((i) => [
+        ...(i.parent ? [(i.parent as { id: string }).id] : []),
+        ...((i.relations as { relatedIssueId: string }[] | undefined) ?? []).map((r) => r.relatedIssueId),
+      ]);
+      if (linked.length > 0) {
+        const readable = await readableIssueIds(ctx, args.actorId, linked);
+        for (const i of items) {
+          if (i.parent && !readable.has((i.parent as { id: string }).id)) delete i.parent;
+          if (i.relations) i.relations = (i.relations as { relatedIssueId: string }[]).filter((r) => readable.has(r.relatedIssueId));
+        }
+      }
 
       const last = pageRows[pageRows.length - 1];
       const nextCursor = hasMore && last

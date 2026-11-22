@@ -18,7 +18,8 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordScheduleChange, recordEstimationChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, assertCanReadIssue, assertAssignable } from "../permissions.js";
+import { assertCanWrite, assertAssignable } from "../permissions.js";
+import { assertCanReadIssue, issueVisible } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { inTransaction } from "../tx.js";
 
@@ -199,11 +200,9 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const cursor = decodeCursor(pagination?.cursor);
       let q = db.selectFrom("issue_relations").selectAll().where("issue_id", "=", issueId);
       if (relationType) q = q.where("relation_type", "=", relationType);
-      if (ctx.scope?.projectIds) {
-        // Don't reveal links to issues outside the key's projects.
-        const scoped = ctx.scope.projectIds;
-        q = q.where("related_issue_id", "in", (eb) => eb.selectFrom("issues").select("id").where("project_id", "in", scoped));
-      }
+      // Don't reveal links to issues the actor can't read.
+      const visible = await issueVisible(ctx, actorId);
+      q = q.where("related_issue_id", "in", (eb) => eb.selectFrom("issues").select("id").where(visible));
       if (cursor) q = q.where("id", ">", cursor);
       const rows = await q.orderBy("id").limit(limit + 1).execute();
       const page = buildPage(rows.map((r) => relationCodec.decode(r)), (r) => r.id, limit);

@@ -23,6 +23,7 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "issue_move", description: "Move an issue to a different project", contract: B.MoveIssue, behavior: "moveIssue", annotations: IDEM },
   { name: "issue_transition", description: "Transition an issue to a new status (respects workflow rules)", contract: B.TransitionIssueStatus, behavior: "transitionIssueStatus", annotations: IDEM },
   { name: "issue_available_transitions", description: "List the statuses an issue may transition to from its current status", contract: B.GetAvailableTransitions, behavior: "getAvailableTransitions", annotations: RO },
+  { name: "issue_change_list", description: "List the status, schedule and estimation changes of all issues in a project, oldest first. Use this instead of reading each issue's history", contract: B.ListIssueChanges, behavior: "listIssueChanges", annotations: RO },
   { name: "issue_history", description: "List an issue's status change history", contract: B.ListIssueStatusHistory, behavior: "listIssueStatusHistory", annotations: RO },
   { name: "issue_schedule_history", description: "List an issue's schedule (start/due date) change history", contract: B.ListIssueScheduleHistory, behavior: "listIssueScheduleHistory", annotations: RO },
   { name: "issue_estimation_history", description: "List an issue's estimation change history", contract: B.ListIssueEstimationHistory, behavior: "listIssueEstimationHistory", annotations: RO },

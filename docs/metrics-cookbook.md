@@ -21,8 +21,8 @@ need an observation increment.
 
 | Metric | Observation tool(s) | Computable now |
 | --- | --- | --- |
-| Cycle time / lead time | `issue_history` + `admin_list`(status) + `activity_list` | yes |
-| Throughput | `issue_history` / `activity_list` | yes |
+| Cycle time / lead time | `issue_change_list` (or `issue_history`) + `admin_list`(status) | yes |
+| Throughput | `issue_change_list` | yes |
 | WIP / work-item age / aging | `issue_search` + `issue_history` | yes |
 | Due-date slippage | `issue_schedule_history` | yes |
 | Estimate accuracy / churn | `issue_estimation_history` + `time_list` / `time_summary` | yes |
@@ -35,11 +35,20 @@ Status categories (`todo` / `in_progress` / `done`) come from `admin_list`
 with `{ params: { resource: "status", ... } }`; they ground the "started" and
 "done" definitions without you inventing them.
 
+For a whole project, read the changes of all its issues with `issue_change_list`
+(`{ projectId, kinds?, occurredFrom?, occurredUntil?, pagination }`) rather than
+issue by issue. It returns the same Events as `issue_history`,
+`issue_schedule_history` and `issue_estimation_history`, tagged with `kind` and in
+time order. The first status change of an issue has no `fromStatusId`: it is the
+issue entering its initial status when it was created, so a status series needs
+nothing else. Deleted issues' Events are included; `activity_list` with
+`action = "deleted"` says when they left.
+
 ## Recipes
 
 ### Cycle time
 
-- Observations: `issue_history` (status transitions, chronological), the status
+- Observations: `issue_history` (status transitions, chronological; `issue_change_list` for all issues at once), the status
   category map from `admin_list`(status).
 - Rules you pick: what counts as *started* (here: first entry into an
   `in_progress`-category status) and *completed* (first entry into a
@@ -51,8 +60,7 @@ with `{ params: { resource: "status", ... } }`; they ground the "started" and
 
 ### Throughput
 
-- Observations: `issue_history` (or `activity_list` filtered to
-  `action = "status_changed"`).
+- Observations: `issue_change_list` with `kinds: ["status"]`.
 - Rules you pick: the window (weekly / monthly) and what "delivered" means (here:
   entered a `done`-category status).
 - Steps: count issues (or transitions) that entered a `done`-category status

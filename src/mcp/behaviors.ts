@@ -30,6 +30,7 @@ export interface Behaviors {
   moveIssue: Fn<typeof B.MoveIssue>;
   transitionIssueStatus: Fn<typeof B.TransitionIssueStatus>;
   getAvailableTransitions: Fn<typeof B.GetAvailableTransitions>;
+  listIssueChanges: Fn<typeof B.ListIssueChanges>;
   listIssueStatusHistory: Fn<typeof B.ListIssueStatusHistory>;
   listIssueScheduleHistory: Fn<typeof B.ListIssueScheduleHistory>;
   listIssueEstimationHistory: Fn<typeof B.ListIssueEstimationHistory>;

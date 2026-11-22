@@ -1,10 +1,10 @@
 import type { Kysely } from "kysely";
-import { ActivityEntry, type ActivityAction, type PropertyChange } from "../schema/index.js";
+import { ActivityEntry, type ActivityAction } from "../schema/index.js";
 import type { Database } from "./db/schema.js";
 import type { Ctx } from "./ctx.js";
 import { makeCodec } from "./db/codec.js";
 
-const activityCodec = makeCodec(ActivityEntry, { json: ["changes"] });
+const activityCodec = makeCodec(ActivityEntry);
 
 export interface ActivityInput {
   projectId: string;
@@ -12,7 +12,6 @@ export interface ActivityInput {
   action: ActivityAction;
   targetType: string;
   targetId: string;
-  changes?: PropertyChange[];
   /** Override the timestamp so a multi-write mutation shares one occurredAt. */
   occurredAt?: string;
 }
@@ -29,7 +28,6 @@ export async function appendActivity(ctx: Ctx, exec: Kysely<Database>, input: Ac
     projectId: input.projectId,
     userId: input.userId,
     action: input.action,
-    changes: input.changes ?? [],
     occurredAt: input.occurredAt ?? ctx.now(),
     targetType: input.targetType,
     targetId: input.targetId,
