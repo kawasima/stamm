@@ -69,10 +69,7 @@ export function viewBehaviors(ctx: Ctx): Pick<Behaviors, ViewMethods> {
     deleteProjectView: async ({ actorId, viewId }) => {
       const view = await load(viewId);
       await assertCanWrite(ctx, view.projectId, actorId, "view.manage");
-      await inTransaction(db, async (trx) => {
-        await trx.deleteFrom("issue_board_positions").where("view_id", "=", viewId).execute();
-        await trx.deleteFrom("project_views").where("id", "=", viewId).execute();
-      });
+      await db.deleteFrom("project_views").where("id", "=", viewId).execute();
     },
 
     listProjectViews: async ({ actorId, projectId, visibility, layout, pagination }) => {

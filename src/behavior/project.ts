@@ -49,7 +49,10 @@ export const UpdateProject = z.function()
   }))
   .returns(z.promise(Project));
 
-/** Delete a project and all associated data */
+/**
+ * Delete a project with its configuration and memberships. Refused while it has
+ * issues, drafts or logged time: archive it instead.
+ */
 export const DeleteProject = z.function()
   .args(z.object({ actorId: Id, projectId: Id }))
   .returns(z.promise(z.void()));

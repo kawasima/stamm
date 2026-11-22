@@ -3,7 +3,7 @@ import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
-import { assertGlobalAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
+import { assertGlobalAdmin, assertNotLastAdmin, isGlobalAdmin, projectUser } from "../permissions.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 
 type UserExtraMethods = "setUserStatus" | "getUserStatus" | "addGroupMember" | "removeGroupMember" | "listGroupMembers";
@@ -22,6 +22,7 @@ export function userExtraBehaviors(ctx: Ctx): Pick<Behaviors, UserExtraMethods> 
   return {
     setUserStatus: async ({ actorId, userId, status }) => {
       await assertGlobalAdmin(ctx, actorId);
+      if (status !== "active") await assertNotLastAdmin(ctx, userId);
       const existing = await db.selectFrom("user_statuses").select("id").where("user_id", "=", userId).executeTakeFirst();
       const value = UserCategory.parse({ id: existing?.id ?? ctx.genId(), userId, status });
       if (existing) await db.updateTable("user_statuses").set(statusCodec.encode(value) as never).where("id", "=", value.id).execute();

@@ -50,10 +50,7 @@ export function iterationBehaviors(ctx: Ctx): Pick<Behaviors, IterationMethods> 
     deleteIteration: async ({ actorId, iterationId }) => {
       const it = await load(iterationId);
       await assertCanWrite(ctx, it.projectId, actorId, "iteration.manage");
-      await inTransaction(db, async (trx) => {
-        await trx.deleteFrom("issue_iterations").where("iteration_id", "=", iterationId).execute();
-        await trx.deleteFrom("iterations").where("id", "=", iterationId).execute();
-      });
+      await db.deleteFrom("iterations").where("id", "=", iterationId).execute();
     },
 
     listIterations: async ({ actorId, projectId, pagination }) => {

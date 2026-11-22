@@ -11,6 +11,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, NotFoundError, ValidationError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { inTransaction } from "../tx.js";
 import { assertCanReadProject, assertGlobalAdmin, canReadProject, isGlobalAdmin } from "../permissions.js";
 
 const codecOpts = {
@@ -214,10 +215,12 @@ export function customFieldBehaviors(ctx: Ctx): Pick<Behaviors, CustomFieldMetho
       if (!row) throw new NotFoundError("CustomFieldDefinition", fieldId);
       // A definition is constitutive of its values (ADR-0003): deleting one in use
       // would void the type/meaning of values still on issues, so guard it.
-      if (await fieldInUse(db, fieldId)) {
-        throw new ConflictError(`Custom field ${fieldId} is in use; clear its values from issues before deleting`);
-      }
-      await db.deleteFrom(TABLE).where("id", "=", fieldId).execute();
+      await inTransaction(db, async (trx) => {
+        if (await fieldInUse(trx, fieldId)) {
+          throw new ConflictError(`Custom field ${fieldId} is in use; clear its values from issues before deleting`);
+        }
+        await trx.deleteFrom(TABLE).where("id", "=", fieldId).execute();
+      });
     },
 
     listCustomFieldDefinitions: async (args) => {

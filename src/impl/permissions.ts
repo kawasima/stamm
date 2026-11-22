@@ -1,6 +1,6 @@
 import { Role, type Permission, type User, type PublicUser } from "../schema/index.js";
 import type { Ctx } from "./ctx.js";
-import { ForbiddenError, NotFoundError, ValidationError } from "./errors.js";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "./errors.js";
 import { makeCodec } from "./db/codec.js";
 
 const roleCodec = makeCodec(Role, { json: ["permissions"] });
@@ -151,4 +151,15 @@ export async function assertCanReadProject(ctx: Ctx, projectId: string, userId: 
   if (!(await canReadProject(ctx, projectId, userId))) {
     throw new NotFoundError("Project", projectId);
   }
+}
+
+/** Refuse what would leave the workspace without an active global admin. */
+export async function assertNotLastAdmin(ctx: Ctx, userId: string): Promise<void> {
+  const active = await ctx.db
+    .selectFrom("users")
+    .select("id")
+    .where("kind", "=", "admin")
+    .where((eb) => eb.not(eb.exists(eb.selectFrom("user_statuses").select("id").whereRef("user_statuses.user_id", "=", "users.id").where("status", "<>", "active"))))
+    .execute();
+  if (active.length === 1 && active[0]!.id === userId) throw new ConflictError("This is the last active admin");
 }

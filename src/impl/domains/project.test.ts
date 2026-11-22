@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ConflictError, NotFoundError } from "../errors.js";
-import { createTestDb, seedAdmin } from "../test-db.js";
+import { createTestDb, seedAdmin, seedRole, seedUser } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { projectBehaviors } from "./project.js";
 
@@ -13,6 +13,8 @@ async function setup() {
   const db = await createTestDb();
   const ctx = makeCtx(db, { genId: countingIds() });
   await seedAdmin(db, "u1"); // "u1" is the admin actor these tests already use
+  await seedUser(db, "alice");
+  for (const r of ["r1", "r2"]) await seedRole(db, r);
   return { db, b: projectBehaviors(ctx) };
 }
 

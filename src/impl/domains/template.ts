@@ -79,6 +79,13 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
 
     instantiateTemplate: async ({ actorId, templateId, subject }) => {
       const t = await loadFor(actorId, templateId);
+      // A template outlives what it names; offer only what can still be used.
+      const labels = t.defaultLabelIds?.length
+        ? new Set((await db.selectFrom("labels").select("id").where("project_id", "=", t.projectId).where("id", "in", t.defaultLabelIds).execute()).map((r) => r.id))
+        : new Set<string>();
+      const members = t.defaultAssigneeIds?.length
+        ? new Set((await db.selectFrom("project_memberships").select("user_id").where("project_id", "=", t.projectId).where("user_id", "in", t.defaultAssigneeIds).execute()).map((r) => r.user_id))
+        : new Set<string>();
       // titlePrefix is a prefix to the caller's subject; fall back to the template
       // name so the result is never an empty subject.
       const finalSubject = t.titlePrefix ? `${t.titlePrefix}${subject ?? ""}` : (subject ?? t.name);
@@ -88,8 +95,8 @@ export function templateBehaviors(ctx: Ctx): Pick<Behaviors, TemplateMethods> {
         subject: finalSubject,
         description: t.descriptionTemplate,
         ...(t.defaultPriorityId !== undefined ? { priorityId: t.defaultPriorityId } : {}),
-        ...(t.defaultLabelIds !== undefined ? { labelIds: t.defaultLabelIds } : {}),
-        ...(t.defaultAssigneeIds !== undefined ? { assigneeIds: t.defaultAssigneeIds } : {}),
+        ...(t.defaultLabelIds !== undefined ? { labelIds: t.defaultLabelIds.filter((id) => labels.has(id)) } : {}),
+        ...(t.defaultAssigneeIds !== undefined ? { assigneeIds: t.defaultAssigneeIds.filter((id) => members.has(id)) } : {}),
         ...(t.defaultCustomFields !== undefined ? { customFields: t.defaultCustomFields } : {}),
       };
     },

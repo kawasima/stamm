@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import type { z } from "zod";
 import {
   Category,
@@ -15,7 +15,7 @@ import type { Ctx } from "../ctx.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../errors.js";
 import { makeCodec, type CodecOptions } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
-import { assertCanReadProject, assertGlobalAdmin, canReadProject, isGlobalAdmin, projectUser } from "../permissions.js";
+import { assertCanReadProject, assertGlobalAdmin, assertNotLastAdmin, canReadProject, isGlobalAdmin, projectUser } from "../permissions.js";
 
 interface Paginated<T> {
   items: T[];
@@ -40,8 +40,10 @@ interface CrudDef<S extends z.ZodTypeAny> {
   projectScoped?: boolean;
   /** Not readable with a project-limited key: the rows say who holds what across projects. */
   workspaceOnly?: boolean;
-  /** Where rows of this resource are referenced from. A referenced row can't be deleted. */
-  referencedBy?: { table: string; column: string }[];
+  /** Columns holding a JSON list of this resource's ids, which no foreign key guards. */
+  listedIn?: { table: string; column: string }[];
+  /** Further conditions on changing or deleting a row. */
+  guardChange?: (id: string, patch: Record<string, unknown> | undefined) => Promise<void>;
   /** Narrow which rows a reader sees. Applied to get and list alike. */
   readFilter?: (ctx: Ctx, args: Record<string, unknown>) => ((q: ConfigQuery) => ConfigQuery) | undefined;
   /**
@@ -114,6 +116,7 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
     for (const [k, v] of Object.entries(args)) {
       if (k !== "actorId" && k !== def.idArg && v !== undefined) patch[k] = v;
     }
+    await def.guardChange?.(id, patch);
     const merged = def.schema.parse({ ...current, ...patch, id }) as R;
     await db.updateTable(def.table).set(codec.encode(merged)).where("id", "=", id).execute();
     return merged;
@@ -122,16 +125,16 @@ function makeCrud<S extends z.ZodTypeAny>(ctx: Ctx, def: CrudDef<S>) {
   const remove = async (args: Record<string, unknown>): Promise<void> => {
     await guardWrite(ctx, args);
     const id = args[def.idArg] as string;
-    // One statement, so nothing can come to reference the row in between.
+    await def.guardChange?.(id, undefined);
     let q = db.deleteFrom(def.table).where("id", "=", id);
-    for (const ref of def.referencedBy ?? []) {
-      q = q.where((eb) => eb.not(eb.exists(eb.selectFrom(ref.table).select(`${ref.table}.${ref.column}`).where(`${ref.table}.${ref.column}`, "=", id))));
+    for (const { table, column } of def.listedIn ?? []) {
+      q = q.where(sql<boolean>`not exists(select 1 from ${sql.table(table)} t, json_each(t.${sql.ref(column)}) j where j.value = ${id})`);
     }
     const res = await q.executeTakeFirst();
     if (Number(res.numDeletedRows ?? 0) > 0) return;
     const exists = await db.selectFrom(def.table).select("id").where("id", "=", id).executeTakeFirst();
     if (!exists) throw new NotFoundError(def.entityName, id);
-    throw new ConflictError(`${def.entityName} ${id} is in use and cannot be deleted`);
+    throw new ConflictError("It is in use and cannot be deleted");
   };
 
   const list = async (args: Record<string, unknown>): Promise<Paginated<R>> => {
@@ -169,22 +172,12 @@ type ConfigMethods =
   | "createUserGroup" | "getUserGroup" | "updateUserGroup" | "deleteUserGroup" | "listUserGroups";
 
 export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
-  const status = makeCrud(ctx, { table: "statuses", schema: Status, idArg: "statusId", entityName: "Status",
-    // History is read by status, so a status in it must keep its meaning.
-    referencedBy: [
-      { table: "issues", column: "status_id" },
-      { table: "issue_status_changes", column: "from_status_id" },
-      { table: "issue_status_changes", column: "to_status_id" },
-      { table: "workflow_transitions", column: "from_status_id" },
-      { table: "workflow_transitions", column: "to_status_id" },
-      { table: "default_status_settings", column: "status_id" },
-    ],
-  });
+  const status = makeCrud(ctx, { table: "statuses", schema: Status, idArg: "statusId", entityName: "Status" });
   const priority = makeCrud(ctx, { table: "priorities", schema: Priority, idArg: "priorityId", entityName: "Priority" });
   const label = makeCrud(ctx, { table: "labels", schema: Label, idArg: "labelId", entityName: "Label", projectScoped: true });
   const issueType = makeCrud(ctx, { table: "issue_types", schema: IssueType, idArg: "issueTypeId", entityName: "IssueType" });
   const category = makeCrud(ctx, { table: "categories", schema: Category, idArg: "categoryId", entityName: "Category", projectScoped: true });
-  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true });
+  const role = makeCrud(ctx, { table: "roles", schema: Role, idArg: "roleId", entityName: "Role", json: ["permissions"], workspaceOnly: true, listedIn: [{ table: "workflow_transitions", column: "role_ids" }] });
   // Users are global-admin-only to write, EXCEPT the very first user on an empty
   // database: someone has to mint the bootstrap admin before any admin exists.
   // Once any user exists this falls back to the admin check, so it can't be used
@@ -216,7 +209,12 @@ export function configBehaviors(ctx: Ctx): Pick<Behaviors, ConfigMethods> {
         ]),
       );
   };
-  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection, readFilter: userReadFilter });
+  const user = makeCrud(ctx, { table: "users", schema: User, idArg: "userId", entityName: "User", writeGuard: userGuard, readProjection: userReadProjection, readFilter: userReadFilter,
+    // Nobody could grant the role again.
+    guardChange: async (id, patch) => {
+      if (patch === undefined || (patch.kind !== undefined && patch.kind !== "admin")) await assertNotLastAdmin(ctx, id);
+    },
+  });
   // A login names exactly one user (mentions rely on it). Checked here so the
   // caller gets a ConflictError instead of a raw unique-index failure.
   const assertLoginFree = async (login: unknown): Promise<void> => {

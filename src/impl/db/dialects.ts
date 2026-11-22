@@ -4,9 +4,9 @@ import type { Database } from "./schema.js";
 
 /** Build a Kysely instance backed by SQLite (`:memory:` for tests, a path for a file). */
 export function makeSqlite(path = ":memory:"): Kysely<Database> {
-  return new Kysely<Database>({
-    dialect: new SqliteDialect({ database: new SQLite(path) }),
-  });
+  const database = new SQLite(path);
+  database.pragma("foreign_keys = on"); // per connection, and what the references rely on
+  return new Kysely<Database>({ dialect: new SqliteDialect({ database }) });
 }
 
 /**

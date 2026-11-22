@@ -5,6 +5,7 @@ import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanReadProject, assertGlobalAdmin } from "../permissions.js";
+import { assertExist } from "../references.js";
 import { inTransaction } from "../tx.js";
 
 type WorkflowConfigMethods =
@@ -32,6 +33,7 @@ export function workflowConfigBehaviors(ctx: Ctx): Pick<Behaviors, WorkflowConfi
       await assertGlobalAdmin(ctx, actorId);
       const created: WorkflowTransitionT[] = [];
       await inTransaction(db, async (trx) => {
+        await assertExist(trx, "roles", transitions.flatMap((t) => t.roleIds));
         await trx
           .deleteFrom("workflow_transitions")
           .where("project_id", "=", projectId)

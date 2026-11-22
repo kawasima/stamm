@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NotFoundError } from "../errors.js";
-import { createTestDb, seedAdmin } from "../test-db.js";
+import { createTestDb, seedAdmin, seedProject } from "../test-db.js";
 import { makeCtx } from "../ctx.js";
 import { configBehaviors } from "./config.js";
 
@@ -82,6 +82,7 @@ describe("config domain — other resources via the same helper", () => {
 
   it("scopes a project-scoped list (labels) by projectId", async () => {
     const { db, b } = await setup();
+    for (const id of ["p1", "p2"]) await seedProject(db, id);
     await b.createLabel({ actorId: "u1", projectId: "p1", name: "bug", color: "#ff0000" });
     await b.createLabel({ actorId: "u1", projectId: "p2", name: "chore", color: "#00ff00" });
 

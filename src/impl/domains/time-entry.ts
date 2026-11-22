@@ -4,6 +4,7 @@ import type { TimeEntry as TimeEntryT } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { NotFoundError } from "../errors.js";
+import { assertInProject } from "../references.js";
 import { makeCodec } from "../db/codec.js";
 import { assertCanWrite, assertCanReadProject, isGlobalAdmin } from "../permissions.js";
 import { assertCanReadIssue } from "../issue-visibility.js";
@@ -24,6 +25,7 @@ export function timeEntryBehaviors(ctx: Ctx): Pick<Behaviors, TimeMethods> {
   return {
     createTimeEntry: async (args) => {
       await assertCanWrite(ctx, args.projectId, args.actorId, "time_entry.create");
+      await assertInProject(db, args.projectId, "issues", [args.issueId]);
       const entry = TimeEntry.parse({
         id: ctx.genId(), occurredAt: ctx.now(), projectId: args.projectId, issueId: args.issueId,
         userId: args.userId, activityId: args.activityId, hours: args.hours, spentOn: args.spentOn, comment: args.comment,

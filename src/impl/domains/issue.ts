@@ -26,6 +26,7 @@ import { assertCanReadIssue, issueVisible, readableIssueIds } from "../issue-vis
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
+import { assertInProject, PROJECT_ATTACHMENTS } from "../references.js";
 import { inTransaction } from "../tx.js";
 
 type IssueMethods =
@@ -104,6 +105,10 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       if (!proj) throw new NotFoundError("Project", args.projectId);
       await validateCustomFields(ctx, { projectId: args.projectId, issueTypeId: args.issueTypeId, values: args.customFields });
       await assertAssignable(ctx, args.projectId, args.assigneeIds ?? []);
+      await assertInProject(db, args.projectId, "labels", args.labelIds ?? []);
+      await assertInProject(db, args.projectId, "categories", [args.categoryId]);
+      await assertInProject(db, args.projectId, "milestones", [args.milestoneId]);
+      if (args.parentIssueId) await assertCanReadIssue(ctx, args.parentIssueId, args.actorId);
       const statusId = args.statusId ?? (await resolveDefaultStatus(ctx, args.projectId, args.issueTypeId)).id;
 
       let issue!: IssueT;
@@ -234,22 +239,12 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       const issue = await loadIssue(issueId);
       await assertCanWrite(ctx, issue.projectId, actorId, "issue.delete");
       await inTransaction(db, async (trx) => {
-        // Delete the Resource (the issue) and its current-state satellites. The
-        // Events stay: issue_status_changes / issue_schedule_changes /
+        // Delete the Resource (the issue); its current state goes with it (cascade).
+        // The Events stay: issue_status_changes / issue_schedule_changes /
         // issue_estimation_changes / activity_entries are append-only and may
         // still be referenced (e.g. by flow metrics), so they survive — the
         // deletion itself is recorded as a `deleted` activity. (See the
         // immutable data model: Resources are deletable, Events are not.)
-        for (const t of [
-          "issue_assignees", "issue_labels", "issue_watchers", "issue_categories", "issue_milestones",
-          "issue_schedules", "issue_estimations", "issue_progress", "issue_iterations",
-        ] as const) {
-          await trx.deleteFrom(t).where("issue_id", "=", issueId).execute();
-        }
-        await trx.deleteFrom("issue_parents").where("child_issue_id", "=", issueId).execute();
-        await trx.deleteFrom("issue_parents").where("parent_issue_id", "=", issueId).execute();
-        await trx.deleteFrom("issue_relations").where("issue_id", "=", issueId).execute();
-        await trx.deleteFrom("issue_relations").where("related_issue_id", "=", issueId).execute();
         await appendActivity(ctx, trx, { projectId: issue.projectId, userId: actorId, action: "deleted", targetType: "issue", targetId: issueId });
         await trx.deleteFrom("issues").where("id", "=", issueId).execute();
       });
@@ -279,6 +274,11 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
           issueTypeId: newIssueTypeId ?? issue.issueTypeId,
         });
         await trx.updateTable("issues").set(issueCodec.encode(moved) as never).where("id", "=", issueId).execute();
+        // What belongs to the project it leaves doesn't come along, nor do assignees
+        // who are not members where it goes.
+        for (const t of PROJECT_ATTACHMENTS) await trx.deleteFrom(t).where("issue_id", "=", issueId).execute();
+        await trx.deleteFrom("issue_assignees").where("issue_id", "=", issueId)
+          .where("assignee_id", "not in", (eb) => eb.selectFrom("project_memberships").select("user_id").where("project_id", "=", targetProjectId)).execute();
         await appendActivity(ctx, trx, { projectId: targetProjectId, userId: actorId, action: "updated", targetType: "issue", targetId: issueId });
       });
       return moved;

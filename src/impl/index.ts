@@ -9,6 +9,7 @@ import { userExtraBehaviors } from "./domains/user-extras.js";
 import { credentialBehaviors } from "./domains/credentials.js";
 import { projectBehaviors } from "./domains/project.js";
 import { workflowConfigBehaviors } from "./domains/workflow-config.js";
+import { withDbErrors } from "./db-errors.js";
 import { issueChangeBehaviors } from "./domains/issue-changes.js";
 import { issueBehaviors } from "./domains/issue.js";
 import { issueSatelliteBehaviors } from "./domains/issue-satellites.js";
@@ -58,5 +59,5 @@ export function createSqlBehaviors(db: Kysely<Database>, opts: CtxOptions = {}):
     ...templateBehaviors(ctx),
     ...viewBehaviors(ctx),
   };
-  return self;
+  return Object.assign(self, withDbErrors(self));
 }

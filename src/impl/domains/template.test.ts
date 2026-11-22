@@ -20,7 +20,8 @@ async function world() {
   const alice = await config.createUser({ actorId: admin.id, login: "alice", email: "al@x.io", displayName: "Alice" });
   const bob = await config.createUser({ actorId: admin.id, login: "bob", email: "b@x.io", displayName: "Bob" });
   await project.addProjectMember({ actorId: admin.id, projectId: proj.id, userId: alice.id, roleIds: [role.id] });
-  return { db, templates, admin, alice, bob, proj, type, priority };
+  const label = await config.createLabel({ actorId: admin.id, projectId: proj.id, name: "l", color: "#000000" });
+  return { db, label, templates, admin, alice, bob, proj, type, priority };
 }
 
 describe("issue templates", () => {
@@ -44,13 +45,15 @@ describe("issue templates", () => {
     const t = await w.templates.createIssueTemplate({
       actorId: w.alice.id, projectId: w.proj.id, name: "Bug report",
       issueTypeId: w.type.id, titlePrefix: "[BUG] ", descriptionTemplate: "## Steps\n",
-      defaultPriorityId: w.priority.id, defaultLabelIds: ["l1"],
+      defaultPriorityId: w.priority.id, defaultLabelIds: [w.label.id, "gone"], defaultAssigneeIds: [w.alice.id, w.bob.id],
     });
 
     const prepared = await w.templates.instantiateTemplate({ actorId: w.alice.id, templateId: t.id, subject: "Login fails" });
     expect(prepared).toMatchObject({
       projectId: w.proj.id, issueTypeId: w.type.id, subject: "[BUG] Login fails",
-      description: "## Steps\n", priorityId: w.priority.id, labelIds: ["l1"],
+      description: "## Steps\n", priorityId: w.priority.id,
+      // only what can still be used: not a deleted label, nor someone who is not a member
+      labelIds: [w.label.id], assigneeIds: [w.alice.id],
     });
 
     // no subject + a titlePrefix yields just the prefix; without either it falls back to the name

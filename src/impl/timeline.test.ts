@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createTestDb } from "./test-db.js";
+import { createTestDb, seedUser } from "./test-db.js";
 import { makeCtx } from "./ctx.js";
 import { appendActivity, deriveTimestamps } from "./timeline.js";
 
@@ -16,6 +16,7 @@ function countingIds(): () => string {
 describe("timeline (ActivityEntry as source of truth for created/updated)", () => {
   it("appends entries and derives createdAt from the 'created' entry, updatedAt from the latest", async () => {
     const db = await createTestDb();
+    await seedUser(db, "u1");
     const ctx = makeCtx(db, {
       genId: countingIds(),
       now: steppingClock([

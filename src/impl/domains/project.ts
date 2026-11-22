@@ -10,6 +10,7 @@ import { ConflictError, NotFoundError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertGlobalAdmin, assertCanReadProject, canReadProject, isGlobalAdmin } from "../permissions.js";
+import { assertNoCycle } from "../references.js";
 import { inTransaction } from "../tx.js";
 
 type ProjectMethods =
@@ -114,16 +115,8 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
 
     deleteProject: async ({ actorId, projectId }) => {
       await assertGlobalAdmin(ctx, actorId);
-      await inTransaction(db, async (trx) => {
-        const res = await trx.deleteFrom("projects").where("id", "=", projectId).executeTakeFirst();
-        if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError("Project", projectId);
-        await trx.deleteFrom("project_categories").where("project_id", "=", projectId).execute();
-        await trx.deleteFrom("project_hierarchies").where("child_project_id", "=", projectId).execute();
-        await trx.deleteFrom("project_hierarchies").where("parent_project_id", "=", projectId).execute();
-        const memberIds = (await trx.selectFrom("project_memberships").select("id").where("project_id", "=", projectId).execute()).map((m) => m.id);
-        if (memberIds.length) await trx.deleteFrom("project_membership_roles").where("membership_id", "in", memberIds).execute();
-        await trx.deleteFrom("project_memberships").where("project_id", "=", projectId).execute();
-      });
+      const res = await db.deleteFrom("projects").where("id", "=", projectId).executeTakeFirst();
+      if (Number(res.numDeletedRows ?? 0) === 0) throw new NotFoundError("Project", projectId);
     },
 
     listProjects: async (args) => {
@@ -194,6 +187,7 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       const h = ProjectHierarchy.parse({ id: ctx.genId(), parentProjectId, childProjectId });
       await inTransaction(db, async (trx) => {
         await trx.deleteFrom("project_hierarchies").where("child_project_id", "=", childProjectId).execute();
+        await assertNoCycle(trx, { table: "project_hierarchies", child: "child_project_id", parent: "parent_project_id" }, childProjectId, parentProjectId);
         await trx.insertInto("project_hierarchies").values(hierarchyCodec.encode(h) as never).execute();
       });
       return h;
@@ -224,7 +218,6 @@ export function projectBehaviors(ctx: Ctx): Pick<Behaviors, ProjectMethods> {
       const row = await db.selectFrom("project_memberships").select("id").where("project_id", "=", projectId).where("user_id", "=", userId).executeTakeFirst();
       if (!row) throw new NotFoundError("ProjectMembership", `${projectId}/${userId}`);
       await inTransaction(db, async (trx) => {
-        await trx.deleteFrom("project_membership_roles").where("membership_id", "=", row.id).execute();
         await trx.deleteFrom("project_memberships").where("id", "=", row.id).execute();
       });
     },

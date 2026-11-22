@@ -23,3 +23,17 @@ export async function seedAdmin(db: Kysely<Database>, id = "admin"): Promise<str
     .execute();
   return id;
 }
+
+/** Rows with fixed ids that a test's own rows refer to. */
+export async function seedUser(db: Kysely<Database>, id: string): Promise<void> {
+  await db.insertInto("users").values({ id, login: id, email: `${id}@test.local`, display_name: id, language: "en", kind: "regular" }).execute();
+}
+
+export async function seedRole(db: Kysely<Database>, id: string): Promise<void> {
+  await db.insertInto("roles").values({ id, name: id, permissions: "[]", issues_visibility: "all" }).execute();
+}
+
+export async function seedProject(db: Kysely<Database>, id: string): Promise<void> {
+  await db.insertInto("projects").values({ id, identifier: id, name: id }).execute();
+  await db.insertInto("project_categories").values({ id: `${id}-category`, project_id: id, visibility: "public", lifecycle: "active" }).execute();
+}

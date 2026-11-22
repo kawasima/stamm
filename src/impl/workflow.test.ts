@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ConflictError, ForbiddenError } from "./errors.js";
-import { createTestDb, seedAdmin } from "./test-db.js";
+import { createTestDb, seedAdmin, seedProject, seedRole } from "./test-db.js";
 import { makeCtx, type Ctx } from "./ctx.js";
 import { configBehaviors } from "./domains/config.js";
 import { workflowConfigBehaviors } from "./domains/workflow-config.js";
@@ -15,6 +15,8 @@ async function setup() {
   const db = await createTestDb();
   const ctx: Ctx = makeCtx(db, { genId: countingIds() });
   await seedAdmin(db, "u1"); // "u1" is the admin actor these tests already use
+  await seedProject(db, "p1");
+  await seedRole(db, "dev");
   const config = configBehaviors(ctx);
   const wf = workflowConfigBehaviors(ctx);
   // a minimal status set + a type

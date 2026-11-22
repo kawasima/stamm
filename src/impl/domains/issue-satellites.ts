@@ -21,6 +21,7 @@ import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, assertAssignable } from "../permissions.js";
 import { assertCanReadIssue, issueVisible } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
+import { assertInProject, assertNoCycle } from "../references.js";
 import { inTransaction } from "../tx.js";
 
 type SatelliteMethods =
@@ -82,6 +83,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     setIssueLabels: async ({ actorId, issueId, labelIds }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertInProject(db, projectId, "labels", labelIds);
       const labels = labelIds.map((labelId) => IssueLabel.parse({ id: ctx.genId(), issueId, labelId }));
       await inTransaction(db, async (trx) => {
         await trx.deleteFrom("issue_labels").where("issue_id", "=", issueId).execute();
@@ -94,12 +96,14 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     setIssueCategory: async ({ actorId, issueId, categoryId }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertInProject(db, projectId, "categories", [categoryId]);
       return upsertOne("issue_categories", categoryCodec, issueId, IssueCategory.parse({ id: ctx.genId(), issueId, categoryId }));
     },
 
     setIssueMilestone: async ({ actorId, issueId, milestoneId }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertInProject(db, projectId, "milestones", [milestoneId]);
       return upsertOne("issue_milestones", milestoneCodec, issueId, IssueMilestone.parse({ id: ctx.genId(), issueId, milestoneId }));
     },
 
@@ -112,6 +116,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
       const value = IssueParent.parse({ id: ctx.genId(), childIssueId, parentIssueId });
       await inTransaction(adb, async (trx: any) => {
         await trx.deleteFrom("issue_parents").where("child_issue_id", "=", childIssueId).execute();
+        await assertNoCycle(trx, { table: "issue_parents", child: "child_issue_id", parent: "parent_issue_id" }, childIssueId, parentIssueId);
         await trx.insertInto("issue_parents").values(parentCodec.encode(value)).execute();
       });
       return value;
@@ -152,6 +157,7 @@ export function issueSatelliteBehaviors(ctx: Ctx): Pick<Behaviors, SatelliteMeth
     setIssueIteration: async ({ actorId, issueId, iterationId }) => {
       const projectId = await issueProjectId(issueId);
       await assertCanWrite(ctx, projectId, actorId, "issue.update");
+      await assertInProject(db, projectId, "iterations", [iterationId]);
       return upsertOne("issue_iterations", iterationCodec, issueId, IssueIteration.parse({ id: ctx.genId(), issueId, iterationId }));
     },
 
