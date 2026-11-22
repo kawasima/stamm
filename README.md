@@ -321,6 +321,16 @@ A project can carry a Code of Conduct as free text (`project_update` with `codeO
 
 On connect, the server sends the Code of Conduct of the projects the key can see as MCP `instructions`, which the client adds to the agent's context. A key limited to a few projects gets those texts in full; with more than three, only the list of projects, and the agent reads each with `project_get`. The `comment_add` and `issue_create` descriptions also tell the agent to read it before writing. Whether a client puts `instructions` into the agent's context depends on the client.
 
+### Importing GitHub issues
+
+```sh
+STAMM_DB=stamm.db npx stamm-import-github --repo owner/name --project my-project --dry-run
+```
+
+One-way import of issues and their comments into a project of its own (pull requests are skipped). GitHub is read through the `gh` CLI. Creation, closing and comment times are kept, and no notifications are sent. Texts are written by a `github-import` user that names the original author; `--map githubLogin=stammLogin` (repeatable) writes a person's texts as their stamm user instead. Logins are never matched implicitly.
+
+Running it again creates only what is new and updates what differs. GitHub wins over local edits to imported text, labels and open/closed state; comments added in stamm are kept, and nothing is deleted. stamm numbers issues itself, so a GitHub number survives only in the `GitHub URL` custom field.
+
 ## Scripts
 
 | Command | Description |

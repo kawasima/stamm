@@ -18,12 +18,15 @@ export interface Ctx {
    * reads it, so every behavior built on this ctx honours it.
    */
   scope?: KeyScope;
+  /** Write no notifications. For replaying history (imports), where nobody should be pinged. */
+  silent?: boolean;
 }
 
 export interface CtxOptions {
   now?: () => string;
   genId?: () => string;
   scope?: KeyScope;
+  silent?: boolean;
 }
 
 export function makeCtx(db: Kysely<Database>, opts: CtxOptions = {}): Ctx {
@@ -32,5 +35,6 @@ export function makeCtx(db: Kysely<Database>, opts: CtxOptions = {}): Ctx {
     now: opts.now ?? (() => new Date().toISOString()),
     genId: opts.genId ?? (() => randomUUID()),
     ...(opts.scope ? { scope: opts.scope } : {}),
+    ...(opts.silent ? { silent: true } : {}),
   };
 }

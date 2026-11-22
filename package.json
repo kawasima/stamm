@@ -9,7 +9,8 @@
   "bin": {
     "stamm-mcp": "dist/bin/stamm-mcp.js",
     "stamm-http": "dist/bin/stamm-http.js",
-    "stamm-bridge": "dist/bin/stamm-bridge.js"
+    "stamm-bridge": "dist/bin/stamm-bridge.js",
+    "stamm-import-github": "dist/bin/stamm-import-github.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

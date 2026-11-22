@@ -25,6 +25,7 @@ export interface NotifyIssueInput {
  * (never notify yourself). Runs inside the triggering write's transaction.
  */
 export async function notifyIssueEvent(ctx: Ctx, exec: Kysely<Database>, input: NotifyIssueInput): Promise<void> {
+  if (ctx.silent) return;
   let recipients: Set<string>;
   if (input.onlyRecipients) {
     recipients = new Set(input.onlyRecipients);
@@ -91,7 +92,7 @@ export async function notifyMentions(
   exec: Kysely<Database>,
   input: { projectId: string; issueKey: string; commentId: string; recipients: string[]; occurredAt: string },
 ): Promise<void> {
-  if (input.recipients.length === 0) return;
+  if (ctx.silent || input.recipients.length === 0) return;
   await exec
     .insertInto("notifications")
     .values(
