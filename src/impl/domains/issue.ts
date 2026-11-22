@@ -5,7 +5,7 @@ import {
   IssueEstimation,
   IssueProgress,
   IssueRelation,
-  User,
+  UserRef,
   Label,
   Category,
   Milestone,
@@ -21,7 +21,7 @@ import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { recordEstimationChange, recordScheduleChange, recordStatusChange } from "../issue-events.js";
 import { notifyIssueEvent } from "../notifications.js";
-import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, rolesOf, scopeAllowsProject, assertAssignable } from "../permissions.js";
+import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, assertAssignable } from "../permissions.js";
 import { assertCanReadIssue, issueVisible, readableIssueIds } from "../issue-visibility.js";
 import { buildPage, decodeCursor } from "../pagination.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
@@ -42,7 +42,7 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
   const progressCodec = makeCodec(IssueProgress);
   const relationCodec = makeCodec(IssueRelation);
   // Codecs for the resources a detail view hydrates its satellites into.
-  const userCodec = makeCodec(User);
+  const userCodec = makeCodec(UserRef);
   const labelResCodec = makeCodec(Label);
   const categoryResCodec = makeCodec(Category);
   const milestoneResCodec = makeCodec(Milestone);

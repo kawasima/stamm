@@ -62,6 +62,13 @@ export const User = Resource.extend({
  */
 export const PublicUser = User.extend({ email: EmailAddress.optional() });
 
+/**
+ * A user as they appear inside something else (an assignee, a watcher). Never has
+ * an email: whoever can read the issue could then read it. Look the user up to see
+ * one, under the rules for that.
+ */
+export const UserRef = User.omit({ email: true });
+
 export const UserStatus = z.enum(["active", "inactive"]);
 
 export const UserCategory = Resource.extend({
@@ -80,6 +87,7 @@ export type Role = z.infer<typeof Role>;
 export type UserKind = z.infer<typeof UserKind>;
 export type User = z.infer<typeof User>;
 export type PublicUser = z.infer<typeof PublicUser>;
+export type UserRef = z.infer<typeof UserRef>;
 export type UserStatus = z.infer<typeof UserStatus>;
 export type UserCategory = z.infer<typeof UserCategory>;
 export type UserGroup = z.infer<typeof UserGroup>;

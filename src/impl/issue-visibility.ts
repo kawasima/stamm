@@ -12,7 +12,8 @@ import { isGlobalAdmin } from "./permissions.js";
  * admin sees every issue. Anyone else sees an issue they wrote; otherwise they
  * must be a member of its project, or both the project and the issue must be
  * public. A member whose roles are all `own_or_assigned` sees only what they
- * wrote or are assigned to.
+ * wrote or are assigned to. Public means said to be public: a project without a
+ * visibility is not.
  */
 
 /** Limit `projectId` to the key's projects. `true` for an unscoped ctx. */
@@ -43,7 +44,7 @@ export async function issueVisible(ctx: Ctx, actorId: string, table = "issues"):
     or (
       ${col("visibility")} = 'public'
       and not exists(select 1 from project_memberships pm where pm.project_id = ${col("project_id")} and pm.user_id = ${actorId})
-      and not exists(select 1 from project_categories pc where pc.project_id = ${col("project_id")} and pc.visibility = 'private'))))`;
+      and exists(select 1 from project_categories pc where pc.project_id = ${col("project_id")} and pc.visibility = 'public'))))`;
 }
 
 /**

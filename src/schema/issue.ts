@@ -14,7 +14,7 @@ import { CustomFieldValue } from "./custom-field.js";
 import { Iteration } from "./iteration.js";
 import { IssueRelation } from "./issue-relation.js";
 import { Label } from "./label.js";
-import { User } from "./user.js";
+import { UserRef } from "./user.js";
 import { Category } from "./category.js";
 import { Milestone } from "./milestone.js";
 
@@ -137,9 +137,9 @@ export const IssueDetail = Issue.extend({
   // (the link rows are an internal detail — a consumer wants the label's name,
   // the assignee's display name, the milestone's title) so a detail view renders
   // in one round-trip rather than N+1 lookups.
-  assignees: z.array(User), // 1:N — the assigned users
+  assignees: z.array(UserRef), // 1:N — the assigned users
   labels: z.array(Label), // 1:N
-  watchers: z.array(User), // 1:N — the watching users
+  watchers: z.array(UserRef), // 1:N — the watching users
   relations: z.array(IssueRelation), // 1:N (carries relatedIssueId + type; kept as-is)
   category: Category.optional(), // 0..1
   milestone: Milestone.optional(),
@@ -157,9 +157,9 @@ export const IssueDetail = Issue.extend({
  */
 export const IssueListItem = Issue.extend({
   // Satellites are hydrated into their target resource, exactly as IssueDetail.
-  assignees: z.array(User).optional(),
+  assignees: z.array(UserRef).optional(),
   labels: z.array(Label).optional(),
-  watchers: z.array(User).optional(),
+  watchers: z.array(UserRef).optional(),
   relations: z.array(IssueRelation).optional(),
   category: Category.optional(),
   milestone: Milestone.optional(),

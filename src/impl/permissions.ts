@@ -129,8 +129,8 @@ export async function assertGlobalAdmin(ctx: Ctx, userId: string): Promise<void>
 
 /**
  * Read scoping for a whole project. Global admins and members always read;
- * everyone else reads only when the project is public (its visibility is not
- * `private`). Used to gate project-scoped reads (milestones, time entries,
+ * everyone else reads only when the project is public. One without a visibility, or
+ * one that does not exist, is not. Used to gate project-scoped reads (milestones, time entries,
  * drafts, views, …) the way issues are already scoped.
  */
 export async function canReadProject(ctx: Ctx, projectId: string, userId: string): Promise<boolean> {
@@ -142,7 +142,7 @@ export async function canReadProject(ctx: Ctx, projectId: string, userId: string
     .select("visibility")
     .where("project_id", "=", projectId)
     .executeTakeFirst();
-  return cat?.visibility !== "private";
+  return cat?.visibility === "public";
 }
 
 /** Gate a project-scoped read. Throws NotFound (not Forbidden) so a hidden

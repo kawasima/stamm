@@ -29,3 +29,18 @@ export function contractReturn(contract: AnyContract): z.ZodTypeAny {
   const ret = contract.returnType();
   return ret instanceof z.ZodPromise ? ret._def.type : ret;
 }
+
+/**
+ * A behavior's result as its contract declares it, for handing to a client. Fields
+ * the contract does not name are dropped: what an implementation happens to have
+ * loaded (an email, a storage key) is not thereby published. A result that does not
+ * fit the contract is a bug in the server and is thrown, not sent; the error names
+ * the fields and not their values.
+ */
+export function declaredResult(contract: AnyContract, result: unknown): unknown {
+  const schema = contractReturn(contract);
+  if (schema instanceof z.ZodVoid) return undefined;
+  const parsed = schema.safeParse(result ?? (schema.isNullable() ? null : result));
+  if (!parsed.success) throw new Error(`result does not match its contract: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.code}`).join(", ")}`);
+  return parsed.data;
+}

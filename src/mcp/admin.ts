@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import * as B from "../behavior/index.js";
 import type { Behaviors } from "./behaviors.js";
-import { contractArgsObject, type AnyContract } from "./contract.js";
+import { contractArgsObject, declaredResult, type AnyContract } from "./contract.js";
 import { injectActor } from "./identity.js";
 import { allowedResources } from "./scope.js";
 import type { KeyScope } from "../schema/index.js";
@@ -114,7 +114,7 @@ function registerAdminOp(
     async ({ params }) => {
       const { resource, ...data } = params as { resource: string } & Record<string, unknown>;
       const behavior = behaviors[map[resource].behavior] as (a: unknown) => Promise<unknown>;
-      const result = await behavior(injectActor(data, actorId));
+      const result = declaredResult(map[resource].contract, await behavior(injectActor(data, actorId)));
       if (result && typeof result === "object") {
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],

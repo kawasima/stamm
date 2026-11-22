@@ -36,11 +36,11 @@ export function activityBehaviors(ctx: Ctx): Pick<Behaviors, ActivityMethods> {
     const inScope = ids === undefined ? sql<boolean>`1 = 1` : ids.length > 0 ? sql<boolean>`project_id in (${sql.join(ids)})` : sql<boolean>`1 = 0`;
     if (await isGlobalAdmin(ctx, actorId)) return inScope;
     const events = await issueEventsVisible(ctx, actorId, sql.ref("activity_entries.target_id"));
-    // Project-level rule, same as canReadProject: member, or not private.
+    // Project-level rule, same as canReadProject: member, or public.
     return sql<boolean>`(${inScope}
       and (
         exists(select 1 from project_memberships m where m.project_id = activity_entries.project_id and m.user_id = ${actorId})
-        or not exists(select 1 from project_categories c where c.project_id = activity_entries.project_id and c.visibility = 'private'))
+        or exists(select 1 from project_categories c where c.project_id = activity_entries.project_id and c.visibility = 'public'))
       and (target_type <> 'issue' or ${events}))`;
   };
 

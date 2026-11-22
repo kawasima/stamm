@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { Behaviors } from "./behaviors.js";
-import { contractArgs, contractReturn, type AnyContract } from "./contract.js";
+import { contractArgs, contractReturn, declaredResult, type AnyContract } from "./contract.js";
 import { injectActor, stripActor } from "./identity.js";
 
 /**
@@ -52,9 +52,9 @@ export function registerSimpleTool(
       annotations: def.annotations,
     },
     async (args) => {
-      const result = await (behaviors[def.behavior] as (a: unknown) => Promise<unknown>)(
+      const result = declaredResult(def.contract, await (behaviors[def.behavior] as (a: unknown) => Promise<unknown>)(
         injectActor(args as Record<string, unknown>, actorId),
-      );
+      ));
       // A null/undefined result (a lookup that missed) is not an error: report it
       // as a plain, schema-less result so the consumer can branch on absence.
       if (result === null || result === undefined) {

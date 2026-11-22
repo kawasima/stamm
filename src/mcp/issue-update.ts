@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DateString, Hours, Id, Percentage } from "../schema/common.js";
 import * as B from "../behavior/index.js";
 import type { Behaviors } from "./behaviors.js";
-import { contractArgs } from "./contract.js";
+import { contractArgs, declaredResult } from "./contract.js";
 import { injectActor, stripActor } from "./identity.js";
 
 /**
@@ -95,10 +95,10 @@ export function registerIssueUpdateTool(server: McpServer, behaviors: Behaviors,
       };
       await (behaviors.atomically ? behaviors.atomically(apply) : apply(behaviors));
 
-      const issue = await behaviors.getIssueDetail({ actorId, issueId });
+      const issue = declaredResult(B.GetIssueDetail, await behaviors.getIssueDetail({ actorId, issueId })) as Record<string, unknown>;
       return {
         content: [{ type: "text", text: JSON.stringify(issue) }],
-        structuredContent: issue as Record<string, unknown>,
+        structuredContent: issue,
       };
     },
   );

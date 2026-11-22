@@ -49,7 +49,7 @@ describe("custom field definitions (registry)", () => {
     const global = await cf.createCustomFieldDefinition({ actorId: "admin", name: "G", fieldType: "string", constraints: {}, scope: {} });
     const scoped = await cf.createCustomFieldDefinition({ actorId: "admin", name: "S", fieldType: "string", constraints: {}, scope: { projectIds: ["p1"] } });
     const other = await cf.createCustomFieldDefinition({ actorId: "admin", name: "O", fieldType: "string", constraints: {}, scope: { projectIds: ["p2"] } });
-    const list = await cf.listCustomFieldDefinitions({ actorId: "u1", projectId: "p1", pagination: { limit: 20 } });
+    const list = await cf.listCustomFieldDefinitions({ actorId: "admin", projectId: "p1", pagination: { limit: 20 } });
     const ids = list.items.map((d) => d.id);
     expect(ids).toContain(global.id);
     expect(ids).toContain(scoped.id);
