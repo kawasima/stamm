@@ -1,14 +1,15 @@
-import { sql } from "kysely";
-import { Comment } from "../../schema/index.js";
+import { sql, type RawBuilder } from "kysely";
+import { Comment, CommentListItem } from "../../schema/index.js";
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
-import { ForbiddenError, NotFoundError } from "../errors.js";
+import { ForbiddenError, NotFoundError, ValidationError } from "../errors.js";
 import { makeCodec } from "../db/codec.js";
 import { appendActivity } from "../timeline.js";
 import { notifyIssueEvent, notifyMentions, resolveMentionRecipients } from "../notifications.js";
-import { canSeePrivateInProject, isGlobalAdmin } from "../permissions.js";
-import { asMissing, assertCanReadIssue, assertCanWriteIssue } from "../issue-visibility.js";
-import { listPage } from "../listing.js";
+import { isGlobalAdmin } from "../permissions.js";
+import { asMissing, assertCanReadIssue, assertCanWriteIssue, issueVisible } from "../issue-visibility.js";
+import { issueMatches } from "../issue-filter.js";
+import { contains, listPage, stored } from "../listing.js";
 import { inTransaction } from "../tx.js";
 
 type CommentMethods = "createComment" | "getComment" | "updateComment" | "deleteComment" | "listComments";
@@ -30,8 +31,25 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
     const row = await db.selectFrom("issues").select(["key", "number"]).where("id", "=", issueId).executeTakeFirst();
     return row ? `${row.key}-${row.number}` : issueId;
   };
-  const loadComment = async (commentId: string): Promise<Comment> => {
-    const row = await db.selectFrom("comments").selectAll().where("id", "=", commentId).executeTakeFirst();
+
+  /**
+   * SQL condition on a row of `comments` joined to its row of `issues`: may `actorId`
+   * read it? They must be able to read the issue; a private comment is also for
+   * members of its project, its author and global admins only.
+   */
+  const commentVisible = async (actorId: string): Promise<RawBuilder<boolean>> => {
+    const onReadable = await issueVisible(ctx, actorId);
+    if (await isGlobalAdmin(ctx, actorId)) return onReadable;
+    return sql<boolean>`(${onReadable} and (
+      comments.visibility = 'public'
+      or comments.author_id = ${actorId}
+      or exists(select 1 from project_memberships cm where cm.project_id = issues.project_id and cm.user_id = ${actorId})))`;
+  };
+
+  /** The comment, if the actor can read it. One they can't is reported as missing. */
+  const readComment = async (actorId: string, commentId: string): Promise<Comment> => {
+    const row = await db.selectFrom("comments").innerJoin("issues", "issues.id", "comments.issue_id").selectAll("comments")
+      .where("comments.id", "=", commentId).where(await commentVisible(actorId)).executeTakeFirst();
     if (!row) throw new NotFoundError("Comment", commentId);
     return codec.decode(row);
   };
@@ -44,10 +62,7 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
    * it can't see.
    */
   const assertCanModify = async (actorId: string, comment: Comment, perm: "comment.update" | "comment.delete"): Promise<void> => {
-    const projectId = await asMissing("Comment", comment.id, () => assertCanWriteIssue(ctx, comment.issueId, actorId, perm));
-    if (comment.visibility === "private" && comment.authorId !== actorId && !(await canSeePrivateInProject(ctx, projectId, actorId))) {
-      throw new NotFoundError("Comment", comment.id);
-    }
+    await asMissing("Comment", comment.id, () => assertCanWriteIssue(ctx, comment.issueId, actorId, perm));
     if (comment.authorId !== actorId && !(await isGlobalAdmin(ctx, actorId))) {
       throw new ForbiddenError(`User ${actorId} may not change a comment written by ${comment.authorId}`);
     }
@@ -71,22 +86,10 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
       return comment;
     },
 
-    getComment: async ({ actorId, commentId }) => {
-      const comment = await loadComment(commentId);
-      await asMissing("Comment", commentId, () => assertCanReadIssue(ctx, comment.issueId, actorId));
-      // A private comment is members-only; hide it (NotFound, not Forbidden) from
-      // a non-member who can otherwise read the issue. The author always sees it.
-      if (comment.visibility === "private" && comment.authorId !== actorId) {
-        const projectId = await issueProjectId(comment.issueId);
-        if (!(await canSeePrivateInProject(ctx, projectId, actorId))) {
-          throw new NotFoundError("Comment", commentId);
-        }
-      }
-      return comment;
-    },
+    getComment: ({ actorId, commentId }) => readComment(actorId, commentId),
 
     updateComment: async ({ actorId, commentId, body, visibility }) => {
-      const current = await loadComment(commentId);
+      const current = await readComment(actorId, commentId);
       await assertCanModify(actorId, current, "comment.update");
       const merged = Comment.parse({ ...current, body, ...(visibility !== undefined ? { visibility } : {}) });
       // Only people newly mentioned by the edit are notified, so fixing a typo
@@ -103,22 +106,29 @@ export function commentBehaviors(ctx: Ctx): Pick<Behaviors, CommentMethods> {
     },
 
     deleteComment: async ({ actorId, commentId }) => {
-      const current = await loadComment(commentId);
+      const current = await readComment(actorId, commentId);
       await assertCanModify(actorId, current, "comment.delete");
       await db.deleteFrom("comments").where("id", "=", commentId).execute();
     },
 
-    listComments: async ({ actorId, issueId, sortDirection, pagination }) => {
-      await assertCanReadIssue(ctx, issueId, actorId);
-      let q = db.selectFrom("comments").selectAll().where("issue_id", "=", issueId);
-      // Members-only: a non-member who can read the issue still sees only public
-      // comments (plus their own). Members and global admins see everything.
-      const projectId = await issueProjectId(issueId);
-      if (!(await canSeePrivateInProject(ctx, projectId, actorId))) {
-        q = q.where((eb) => eb.or([eb("visibility", "=", "public"), eb("author_id", "=", actorId)]));
-      }
-      const page = await listPage(q, { name: "comments", keys: [{ by: sql.ref("occurred_at"), dir: sortDirection ?? "asc" }] }, "id", pagination);
-      return { items: page.items.map((r) => codec.decode(r)), nextCursor: page.nextCursor };
+    listComments: async ({ actorId, issueId, issues, authorIds, occurredFrom, occurredUntil, query, sortDirection, pagination }) => {
+      if ((issueId === undefined) === (issues === undefined)) throw new ValidationError("Give exactly one of issueId and issues");
+      if (issueId !== undefined) await assertCanReadIssue(ctx, issueId, actorId);
+      let q = db.selectFrom("comments").innerJoin("issues", "issues.id", "comments.issue_id").selectAll("comments")
+        .select(["issues.project_id as of_project", "issues.key as of_key", "issues.number as of_number", "issues.subject as of_subject"])
+        .where(await commentVisible(actorId));
+      if (issueId !== undefined) q = q.where("comments.issue_id", "=", issueId);
+      if (issues !== undefined) q = q.where(issueMatches(issues, ctx.now().slice(0, 10)));
+      if (authorIds) q = q.where("comments.author_id", "in", authorIds);
+      if (occurredFrom) q = q.where("comments.occurred_at", ">=", stored(occurredFrom));
+      if (occurredUntil) q = q.where("comments.occurred_at", "<", stored(occurredUntil));
+      if (query) q = q.where(contains(sql.ref("comments.body"), query));
+      const page = await listPage(q, { name: "comments", keys: [{ by: sql.ref("comments.occurred_at"), dir: sortDirection ?? "asc" }] }, "comments.id", pagination);
+      return {
+        items: page.items.map(({ of_project, of_key, of_number, of_subject, ...row }) =>
+          CommentListItem.parse({ ...codec.decode(row), issue: { projectId: of_project, key: of_key, number: of_number, subject: of_subject } })),
+        nextCursor: page.nextCursor,
+      };
     },
   };
 }

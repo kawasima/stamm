@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Event, Id, MarkdownContent, TargetRef, Timestamp } from "./common.js";
+import { Issue } from "./issue.js";
 
 // ============================================================
 // Events (E)
@@ -15,6 +16,11 @@ export const Comment = Event.extend({
   visibility: CommentVisibility.default("public"),
 });
 
+/** A comment in a listing, with what is needed to say which issue it is on (derived, not persisted). */
+export const CommentListItem = Comment.extend({
+  issue: Issue.pick({ projectId: true, key: true, number: true, subject: true }),
+});
+
 /** Reaction (E) - reacting is an event */
 export const Reaction = z.object({
   id: Id,
@@ -25,4 +31,5 @@ export const Reaction = z.object({
 
 export type CommentVisibility = z.infer<typeof CommentVisibility>;
 export type Comment = z.infer<typeof Comment>;
+export type CommentListItem = z.infer<typeof CommentListItem>;
 export type Reaction = z.infer<typeof Reaction>;

@@ -100,6 +100,9 @@ export const text = (column: string, dir: Dir): SortKey => ({ by: sql`lower(${sq
 export const contains = (by: RawBuilder<unknown>, needle: string): RawBuilder<boolean> =>
   sql<boolean>`${by} like ${`%${needle.replace(/[\\%_]/g, "\\$&")}%`} escape '\\'`;
 
+/** An instant as stored: ISO with milliseconds, so that comparing as text is comparing times. */
+export const stored = (instant: string): string => new Date(instant).toISOString();
+
 /** An instant falls on `day` (UTC) or later. */
 export const onOrAfter = (instant: RawBuilder<unknown>, day: string): RawBuilder<boolean> => sql<boolean>`${instant} >= ${day}`;
 

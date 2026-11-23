@@ -3,7 +3,7 @@ import { IssueChangeKind, IssueEstimationChange, IssueScheduleChange, IssueStatu
 import type { Behaviors } from "../../mcp/behaviors.js";
 import type { Ctx } from "../ctx.js";
 import { makeCodec, type RowCodec } from "../db/codec.js";
-import { listPage, type Page } from "../listing.js";
+import { listPage, stored, type Page } from "../listing.js";
 import { assertCanReadProject } from "../permissions.js";
 import { assertCanReadIssueEvents, issueEventsVisible, issueInProject } from "../issue-visibility.js";
 
@@ -65,16 +65,13 @@ export function issueChangeBehaviors(ctx: Ctx): Pick<Behaviors, Methods> {
     return { items: page.items.map((i) => i.event) as never, nextCursor: page.nextCursor };
   };
 
-  // Stored instants are ISO with milliseconds and compared as text.
-  const instant = (t: string): string => new Date(t).toISOString();
-
   return {
     listIssueChanges: async ({ actorId, projectId, kinds, occurredFrom, occurredUntil, pagination }) => {
       await assertCanReadProject(ctx, projectId, actorId);
       const issueId = sql.ref("e.issue_id");
       let where = sql<boolean>`${issueInProject(issueId, projectId)} and ${await issueEventsVisible(ctx, actorId, issueId)}`;
-      if (occurredFrom) where = sql<boolean>`${where} and e.occurred_at >= ${instant(occurredFrom)}`;
-      if (occurredUntil) where = sql<boolean>`${where} and e.occurred_at < ${instant(occurredUntil)}`;
+      if (occurredFrom) where = sql<boolean>`${where} and e.occurred_at >= ${stored(occurredFrom)}`;
+      if (occurredUntil) where = sql<boolean>`${where} and e.occurred_at < ${stored(occurredUntil)}`;
       const page = await list([...new Set(kinds ?? IssueChangeKind.options)], where, pagination);
       return { items: page.items.map((i) => ({ kind: i.kind, ...(i.event as object) }) as IssueChange), nextCursor: page.nextCursor };
     },

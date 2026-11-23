@@ -41,7 +41,7 @@ export const SIMPLE_TOOLS: SimpleTool[] = [
   { name: "comment_get", description: "Get a comment by ID", contract: B.GetComment, behavior: "getComment", annotations: RO },
   { name: "comment_update", description: "Edit a comment", contract: B.UpdateComment, behavior: "updateComment", annotations: IDEM },
   { name: "comment_delete", description: "Delete a comment", contract: B.DeleteComment, behavior: "deleteComment", annotations: DESTRUCTIVE },
-  { name: "comment_list", description: "List comments on an issue", contract: B.ListComments, behavior: "listComments", annotations: RO },
+  { name: "comment_list", description: "List comments, oldest first: of one issue (issueId), or of all issues matching a filter (issues, same as the issue_search filter). Give exactly one of the two. Narrow by author, time written, or text in the body (query); each comment names its issue", contract: B.ListComments, behavior: "listComments", annotations: RO },
 
   // --- Attachments (metadata/reference only; binary upload is not supported in v1) ---
   { name: "attachment_add", description: "Attach a file reference to an issue (binary upload not supported; pass a stored reference)", contract: B.CreateAttachment, behavior: "createAttachment" },

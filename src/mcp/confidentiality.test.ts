@@ -16,7 +16,7 @@ function* calls(w: W, contract: AnyContract): Generator<Record<string, unknown>>
   const some = (k: string, t: z.ZodTypeAny): unknown[] => {
     const inner = unwrap(t);
     if (k === "pagination") return [{ limit: 100 }];
-    if (k === "filter") return [{}, ...w.ids.projectId!.map((projectId) => ({ projectId })), ...w.ids.issueId!.map((parentIssueId) => ({ parentIssueId })), ...w.ids.labelId!.map((l) => ({ labelIds: [l] })), { query: "IDDENWOR" }];
+    if (k === "filter" || k === "issues") return [{}, ...w.ids.projectId!.map((projectId) => ({ projectId })), ...w.ids.issueId!.map((parentIssueId) => ({ parentIssueId })), ...w.ids.labelId!.map((l) => ({ labelIds: [l] })), { query: "IDDENWOR" }];
     if (k === "include") return [["assignees", "labels", "watchers", "relations", "category", "milestone", "iteration", "parent", "schedule", "estimation", "progress"]];
     if (k === "key") return ["default-1", "default-2", "hidden-project-1"];
     if (k === "identifier") return ["default", "hidden-project"];
@@ -35,6 +35,12 @@ function* calls(w: W, contract: AnyContract): Generator<Record<string, unknown>>
   const required = names.filter((k) => !shape[k]!.isOptional());
   let bases: Record<string, unknown>[] = [{}];
   for (const k of required) bases = bases.flatMap((o) => some(k, shape[k]!).map((v) => ({ ...o, [k]: v })));
+  // A listing of one issue or of many takes exactly one of the two: try the rest with each.
+  if (names.includes("issueId") && names.includes("issues")) {
+    const either = ["issueId", "issues"];
+    bases = bases.flatMap((o) => either.flatMap((k) => some(k, shape[k]!).map((v) => ({ ...o, [k]: v }))));
+    required.push(...either);
+  }
   for (const base of bases) {
     yield base;
     for (const k of names.filter((n) => !required.includes(n))) for (const v of some(k, shape[k]!)) yield { ...base, [k]: v };

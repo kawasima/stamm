@@ -69,6 +69,13 @@ async function world() {
 }
 type W = Awaited<ReturnType<typeof world>>;
 
+const issueFilter = (w: W): Record<string, unknown> => ({
+  projectId: w.projectId, projectIds: [w.projectId], issueTypeIds: w.type, statusIds: [w.s.statusIds.todo], statusCategories: ["todo"], priorityIds: w.prio, assigneeIds: w.users,
+  authorId: w.actorId, labelIds: w.labels, milestoneId: w.milestones[0], iterationId: w.iterations[0], categoryId: "c", parentIssueId: w.issues[0], watcherUserId: w.users[0], visibility: "public",
+  createdAfter: "2026-01-01", createdBefore: "2026-12-31", updatedAfter: "2026-01-01", updatedBefore: "2026-12-31", dueDateFrom: "2026-01-01", dueDateTo: "2026-12-31",
+  hasNoDueDate: false, isOverdue: false, customField: { fieldId: "f", value: "x" }, query: "a",
+});
+
 /** A value for every argument a listing can take, by name. */
 const values = (w: W): Record<string, unknown> => ({
   actorId: w.actorId, projectId: w.projectId, issueId: w.issues[0], parentIssueId: w.issues[0], groupId: w.gid, targetType: "issue", targetId: w.issues[0],
@@ -77,12 +84,7 @@ const values = (w: W): Record<string, unknown> => ({
   eventType: "issue.assigned", isRead: false, action: "created", parentProjectId: w.projectId, memberUserId: w.s.memberId,
   occurredAfter: "2026-01-01", occurredBefore: "2026-12-31", occurredFrom: "2026-01-01T00:00:00Z", occurredUntil: "2027-01-01T00:00:00Z", kinds: ["status"],
   spentOnFrom: "2026-01-01", spentOnTo: "2026-12-31", groupBy: "user", include: ["labels"], sortDirection: "asc", pagination: { limit: 100 },
-  filter: {
-    projectId: w.projectId, projectIds: [w.projectId], issueTypeIds: w.type, statusIds: [w.s.statusIds.todo], statusCategories: ["todo"], priorityIds: w.prio, assigneeIds: w.users,
-    authorId: w.actorId, labelIds: w.labels, milestoneId: w.milestones[0], iterationId: w.iterations[0], categoryId: "c", parentIssueId: w.issues[0], watcherUserId: w.users[0], visibility: "public",
-    createdAfter: "2026-01-01", createdBefore: "2026-12-31", updatedAfter: "2026-01-01", updatedBefore: "2026-12-31", dueDateFrom: "2026-01-01", dueDateTo: "2026-12-31",
-    hasNoDueDate: false, isOverdue: false, customField: { fieldId: "f", value: "x" }, query: "a",
-  },
+  filter: issueFilter(w), issues: issueFilter(w), authorIds: w.users,
 });
 
 const LISTINGS: [string, keyof Behaviors, AnyContract][] = [
@@ -92,9 +94,18 @@ const LISTINGS: [string, keyof Behaviors, AnyContract][] = [
 const shapeOf = (c: AnyContract) => contractArgsObject(c).shape as Record<string, z.ZodTypeAny>;
 const unwrap = (t: z.ZodTypeAny): z.ZodTypeAny => (t instanceof z.ZodOptional || t instanceof z.ZodDefault || t instanceof z.ZodNullable ? unwrap(t._def.innerType) : t);
 
+/** Arguments that take an issue filter. */
+const FILTERS = ["filter", "issues"];
+/** Arguments of which exactly one is given, by listing. */
+const ONE_OF: Record<string, string[]> = { comment_list: ["issueId", "issues"] };
+/** The ways to call a listing as far as those go: which arguments to leave out. */
+const leavings = (name: string): string[][] => (ONE_OF[name] ?? [""]).map((kept) => (ONE_OF[name] ?? []).filter((k) => k !== kept));
+
 /** Only what a listing requires. */
-const required = (w: W, c: AnyContract): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(shapeOf(c)).filter(([k, t]) => !t.isOptional() || k === "sortDirection").filter(([k]) => k !== "pagination" && k !== "sortDirection").map(([k]) => [k, k === "filter" ? {} : values(w)[k]]));
+const required = (w: W, name: string, c: AnyContract): Record<string, unknown> => ({
+  ...(ONE_OF[name] ? { [ONE_OF[name]!.at(-1)!]: {} } : {}),
+  ...Object.fromEntries(Object.entries(shapeOf(c)).filter(([k, t]) => !t.isOptional() || k === "sortDirection").filter(([k]) => k !== "pagination" && k !== "sortDirection").map(([k]) => [k, k === "filter" ? {} : values(w)[k]])),
+});
 
 describe("every listing", () => {
   it("is covered by a value for each argument it declares", async () => {
@@ -112,13 +123,13 @@ describe("every listing", () => {
         get: (t, k: string) => {
           if (typeof k === "string") read.add(path + k);
           const v = (t as Record<string, unknown>)[k];
-          return k === "filter" ? watch(v as object, "filter.") : v;
+          return FILTERS.includes(k) && v ? watch(v as object, `${k}.`) : v;
         },
       });
       const shape = shapeOf(c);
       const args = Object.fromEntries(Object.keys(shape).map((k) => [k, k === "sortBy" ? (unwrap(shape[k]!) as z.ZodEnum<[string]>).options[0] : values(w)[k]]));
-      await (w.b[behavior] as (a: unknown) => Promise<unknown>)(watch(args, ""));
-      const declared = Object.keys(shape).flatMap((k) => (k === "filter" ? Object.keys(values(w).filter as object).map((f) => `filter.${f}`) : [k]));
+      for (const out of leavings(name)) await (w.b[behavior] as (a: unknown) => Promise<unknown>)(watch(Object.fromEntries(Object.entries(args).filter(([k]) => !out.includes(k))), ""));
+      const declared = Object.keys(shape).flatMap((k) => (FILTERS.includes(k) ? Object.keys(issueFilter(w)).map((f) => `${k}.${f}`) : [k]));
       // Shared vocabulary is the same for every reader, so the actor may go unread.
       expect(declared.filter((k) => k !== "actorId" && !read.has(k)), name).toEqual([]);
     }
@@ -135,7 +146,7 @@ describe("every listing", () => {
       let foreign: string | undefined;
       for (const sortBy of sorts) for (const sortDirection of dirs) {
         const label = `${name} ${sortBy ?? ""} ${sortDirection ?? ""}`;
-        const args = { ...required(w, c), ...(sortBy ? { sortBy } : {}), ...(sortDirection ? { sortDirection } : {}) };
+        const args = { ...required(w, name, c), ...(sortBy ? { sortBy } : {}), ...(sortDirection ? { sortDirection } : {}) };
         const all = (await list({ ...args, pagination: { limit: 100 } })).items.map((i) => i.id);
         const got: string[] = [];
         let cursor: string | undefined, first: string | undefined;

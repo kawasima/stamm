@@ -37,7 +37,9 @@ What the tools cover today (one MCP tool per operation unless noted):
   and predictability metrics; deleting an issue removes the issue but preserves
   its event history (the deletion is itself recorded on the timeline).
 - **Issue relations** — relate / unrelate / list (blocks, relates-to, …).
-- **Comments** — add / edit / delete / list, with visibility. `@login` mentions a project member (see Notifications).
+- **Comments** — add / edit / delete / list, with visibility. `comment_list` takes one issue or an issue filter (as
+  `issue_search` does), and narrows by author, time written and text in the body. `@login` mentions a project member
+  (see Notifications).
 - **Attachments** — attach / get / delete / list by reference (binary upload is
   not supported in v1).
 - **Projects** — CRUD; archive / unarchive; visibility; parent / sub-projects;

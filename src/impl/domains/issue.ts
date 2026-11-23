@@ -22,7 +22,8 @@ import { recordEstimationChange, recordScheduleChange, recordStatusChange } from
 import { notifyIssueEvent } from "../notifications.js";
 import { assertCanWrite, isGlobalAdmin, isMember, roleIdsOf, assertAssignable } from "../permissions.js";
 import { asMissing, assertCanReadIssue, assertCanWriteIssue, issueVisible, readableIssueIds } from "../issue-visibility.js";
-import { contains, listPage, nullsLast, onOrAfter, onOrBefore, text } from "../listing.js";
+import { createdAt, issueMatches, updatedAt } from "../issue-filter.js";
+import { listPage, nullsLast, text } from "../listing.js";
 import { assertTransitionAllowed, availableTransitions, resolveDefaultStatus, transitionsForScope } from "../workflow.js";
 import { validateCustomFields } from "./custom-field.js";
 import { assertInProject, PROJECT_ATTACHMENTS } from "../references.js";
@@ -95,15 +96,6 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
       .selectAll(target)
       .executeTakeFirst();
     return row ? codec.decode(row as Record<string, unknown>) : undefined;
-  };
-
-  /** The issue holds `value` in the field, alone or among several. Types must match: "1" is not 1. */
-  const hasCustomField = ({ fieldId, value }: { fieldId: string; value: string | number | boolean }) => {
-    const type = typeof value === "string" ? sql`= 'text'` : typeof value === "number" ? sql`in ('integer', 'real')` : sql`= ${String(value)}`;
-    const same = typeof value === "boolean" ? sql`1 = 1` : sql`v.value = ${value}`;
-    return sql<boolean>`exists(
-      select 1 from json_each(issues.custom_fields) f, json_each(f.value, '$.value') v
-      where json_extract(f.value, '$.fieldId') = ${fieldId} and v.type ${type} and ${same})`;
   };
 
   return {
@@ -364,59 +356,14 @@ export function issueBehaviors(ctx: Ctx): Pick<Behaviors, IssueMethods> {
     },
 
     listIssues: async (args) => {
-      const f = args.filter ?? {};
       const dir = args.sortDirection ?? "asc";
-      const today = ctx.now().slice(0, 10);
-
-      const createdAt = sql`(select min(occurred_at) from activity_entries ae where ae.target_type = 'issue' and ae.target_id = issues.id and ae.action = 'created')`;
-      const updatedAt = sql`(select max(occurred_at) from activity_entries ae where ae.target_type = 'issue' and ae.target_id = issues.id)`;
 
       let q = adb
         .selectFrom("issues")
         .leftJoin("issue_schedules", "issue_schedules.issue_id", "issues.id")
         .selectAll("issues");
 
-      if (f.projectId) q = q.where("issues.project_id", "=", f.projectId);
-      if (f.projectIds?.length) q = q.where("issues.project_id", "in", f.projectIds);
-      if (f.issueTypeIds?.length) q = q.where("issues.issue_type_id", "in", f.issueTypeIds);
-      if (f.statusIds?.length) q = q.where("issues.status_id", "in", f.statusIds);
-      if (f.priorityIds?.length) q = q.where("issues.priority_id", "in", f.priorityIds);
-      if (f.authorId) q = q.where("issues.author_id", "=", f.authorId);
-      if (f.visibility) q = q.where("issues.visibility", "=", f.visibility);
-      if (f.statusCategories?.length) {
-        q = q.where(sql<boolean>`(select category from statuses where statuses.id = issues.status_id) in (${sql.join(f.statusCategories)})`);
-      }
-
-      const existsSat = (table: string, col: string, vals?: string[], single?: string) => {
-        if (single !== undefined) {
-          q = q.where((eb: any) => eb.exists(eb.selectFrom(table).select("id").whereRef(`${table}.issue_id`, "=", "issues.id").where(`${table}.${col}`, "=", single)));
-        } else if (vals && vals.length) {
-          q = q.where((eb: any) => eb.exists(eb.selectFrom(table).select("id").whereRef(`${table}.issue_id`, "=", "issues.id").where(`${table}.${col}`, "in", vals)));
-        }
-      };
-      existsSat("issue_assignees", "assignee_id", f.assigneeIds);
-      existsSat("issue_labels", "label_id", f.labelIds);
-      existsSat("issue_milestones", "milestone_id", undefined, f.milestoneId);
-      existsSat("issue_iterations", "iteration_id", undefined, f.iterationId);
-      existsSat("issue_categories", "category_id", undefined, f.categoryId);
-      existsSat("issue_watchers", "user_id", undefined, f.watcherUserId);
-      if (f.parentIssueId) {
-        q = q.where((eb: any) => eb.exists(eb.selectFrom("issue_parents").select("id").whereRef("issue_parents.child_issue_id", "=", "issues.id").where("issue_parents.parent_issue_id", "=", f.parentIssueId)));
-      }
-
-      if (f.createdAfter) q = q.where(onOrAfter(createdAt, f.createdAfter));
-      if (f.createdBefore) q = q.where(onOrBefore(createdAt, f.createdBefore));
-      if (f.updatedAfter) q = q.where(onOrAfter(updatedAt, f.updatedAfter));
-      if (f.updatedBefore) q = q.where(onOrBefore(updatedAt, f.updatedBefore));
-      if (f.dueDateFrom) q = q.where("issue_schedules.due_date", ">=", f.dueDateFrom);
-      if (f.dueDateTo) q = q.where("issue_schedules.due_date", "<=", f.dueDateTo);
-      if (f.hasNoDueDate) q = q.where("issue_schedules.due_date", "is", null);
-      if (f.isOverdue) {
-        q = q.where(sql<boolean>`issue_schedules.due_date is not null and issue_schedules.due_date < ${today} and (select category from statuses where statuses.id = issues.status_id) != 'done'`);
-      }
-      if (f.query) q = q.where(contains(sql.ref("issues.subject"), f.query));
-      if (f.customField) q = q.where(hasCustomField(f.customField));
-
+      q = q.where(issueMatches(args.filter, ctx.now().slice(0, 10)));
       q = q.where(await issueVisible(ctx, args.actorId));
 
       const ref = (column: string) => ({ by: sql.ref(column), dir });
